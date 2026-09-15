@@ -1,0 +1,51 @@
+version: "3.0"
+last_updated: "2026-09-27"
+
+datasets:
+  - id: "subpipe-v1"
+    name: "SubPipe Subsea Pipeline Sonar Benchmark (SubPipeMini / Mini2)"
+    modality: "Side-Scan Sonar (SSS)"
+    target_classes: ["pipeline", "free_span", "joint"]
+    real_data: true
+    synthetic: false
+    sensor_frequency_khz: 900
+    license: "CC-BY-4.0"
+    source_url: "https://zenodo.org/records/subpipe"
+    local_path: "data/raw/subpipe"
+    usage: ["known_detector_training", "tracking_benchmark"]
+
+  - id: "swdd-mines-walls"
+    name: "Sonar Wall Detection Dataset (REMARO SWDD)"
+    modality: "High-Frequency SSS"
+    target_classes: ["wall", "naval_mine", "obstacle"]
+    real_data: true
+    synthetic: false
+    sensor_frequency_khz: 1200
+    license: "Research-Only / CC-BY"
+    source_url: "https://zenodo.org/records/swdd"
+    local_path: "data/raw/swdd"
+    usage: ["known_detector_training", "contact_benchmark"]
+
+  - id: "umich-sonar-8623hz41x"
+    name: "UMich DeepBlue Marine Sonar Survey Dataset"
+    modality: "High-Resolution Side-Scan Sonar"
+    target_classes: ["seafloor_sediments", "anthropogenic_debris", "boulders"]
+    real_data: true
+    synthetic: false
+    sensor_frequency_khz: 900
+    license: "Open Data Commons"
+    source_url: "https://deepblue.lib.umich.edu/data/concern/data_sets/8623hz41x"
+    local_path: "data/raw/umich_sonar"
+    usage: ["patchcore_normal_seabed_training", "context_benchmark", "tracking_evaluation"]
+
+  - id: "abysseye-physics-sim-v3"
+    name: "ABYSSEYE Synthetic Sonar & Netting Physics Simulator"
+    modality: "Procedural High-Resolution Acoustic Ray-Tracer"
+    target_classes: ["ghost_net", "trawl_net", "entangled_gear", "sand_ripples", "rocky_reef"]
+    real_data: false
+    synthetic: true
+    sensor_frequency_khz: 900
+    license: "MIT"
+    source_url: "internal://ml/ingestion/synthetic_generator.py"
+    local_path: "data/processed/synthetic"
+    usage: ["acoustic_ray_tracing_tests", "physics_verification_tests", "unit_benchmarking"]
