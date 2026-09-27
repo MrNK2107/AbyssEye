@@ -1,0 +1,33 @@
+{
+  "frame_id": "sim_survey_ping_0000",
+  "survey_id": "SIM-BALTIC-DEMO",
+  "ping_index": 0,
+  "altitude_m": 12.0,
+  "slant_range_m": 50.0,
+  "heading_deg": 180.0,
+  "latitude": 54.821,
+  "longitude": 18.734,
+  "channel": "DUAL",
+  "pixel_resolution_m": 0.05,
+  "real": false,
+  "synthetic": true,
+  "source_dataset": "ABYSSEYE-SIM-V3",
+  "ground_truth_targets": [
+    {
+      "target_type": "ghost_net",
+      "center_ping": 128,
+      "center_col": 368,
+      "target_height_m": 1.8,
+      "shadow_length_m": 3.860294117647059,
+      "slant_range_m": 21.875,
+      "collinearity_deg": 0.0,
+      "channel": "STARBOARD",
+      "bbox": [
+        356,
+        112,
+        24,
+        32
+      ]
+    }
+  ]
+}

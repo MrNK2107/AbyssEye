@@ -1,0 +1,33 @@
+{
+  "frame_id": "sim_survey_ping_0002",
+  "survey_id": "SIM-BALTIC-DEMO",
+  "ping_index": 2,
+  "altitude_m": 12.0,
+  "slant_range_m": 50.0,
+  "heading_deg": 180.0,
+  "latitude": 54.8212,
+  "longitude": 18.7341,
+  "channel": "DUAL",
+  "pixel_resolution_m": 0.05,
+  "real": false,
+  "synthetic": true,
+  "source_dataset": "ABYSSEYE-SIM-V3",
+  "ground_truth_targets": [
+    {
+      "target_type": "shipwreck",
+      "center_ping": 144,
+      "center_col": 368,
+      "target_height_m": 4.5,
+      "shadow_length_m": 13.125,
+      "slant_range_m": 21.875,
+      "collinearity_deg": 0.0,
+      "channel": "STARBOARD",
+      "bbox": [
+        356,
+        128,
+        24,
+        32
+      ]
+    }
+  ]
+}
