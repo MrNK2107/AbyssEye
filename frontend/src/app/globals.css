@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-ocean-950 text-slate-100 antialiased font-sans min-h-screen overflow-x-hidden;
+  }
+}
+
+/* Custom scrollbar for mission dashboards */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #071328;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e528e;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2b73be;
+}
+
+/* Sonar pulse animation */
+@keyframes sonar-ping {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.9;
+  }
+  70% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.animate-sonar {
+  animation: sonar-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
