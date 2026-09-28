@@ -5,41 +5,94 @@ import { Navbar } from '@/components/Navbar';
 import { GisMap } from '@/components/GisMap';
 import { EvidenceCard } from '@/components/EvidenceCard';
 import { TriageQueue } from '@/components/TriageQueue';
+import { LiveWaterfallViewer } from '@/components/LiveWaterfallViewer';
 import { ContactDigitalTwin } from '@/types/contact';
 import { 
-  Radio, 
   Play, 
+  Pause, 
+  SkipForward, 
   Upload, 
-  Trash2, 
+  Radio, 
+  Compass, 
+  Gauge, 
   Activity, 
-  Cpu, 
-  Waves, 
-  CheckCircle,
-  AlertCircle,
-  Clock,
-  Gauge
+  Layers, 
+  ShieldCheck, 
+  Download,
+  RefreshCw,
+  FolderArchive,
+  ChevronRight
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 const WS_URL = 'ws://localhost:8000/api/v1/ws/live-stream';
 
+interface MissionSummary {
+  key: string;
+  mission_id: string;
+  title: string;
+  region: string;
+  environment: string;
+  origin_coords: [number, number];
+  nominal_depth_m: number;
+  nominal_altitude_m: number;
+  speed_knots: number;
+  total_pings: number;
+  is_active: boolean;
+}
+
 export default function MissionDashboard() {
+  const [missions, setMissions] = useState<MissionSummary[]>([]);
+  const [activeMissionKey, setActiveMissionKey] = useState<string>('baltic_debris');
   const [contacts, setContacts] = useState<ContactDigitalTwin[]>([]);
   const [selectedContact, setSelectedContact] = useState<ContactDigitalTwin | null>(null);
-  const [surveyId, setSurveyId] = useState('SRV-BALTIC-ACOUSTIC-01');
-  const [qcStatus, setQcStatus] = useState('READY');
-  const [snrDb, setSnrDb] = useState<number>(10.5);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [wsConnected, setWsConnected] = useState(false);
-  const [liveStreamLogs, setLiveStreamLogs] = useState<string[]>([]);
-  const [currentPingIndex, setCurrentPingIndex] = useState(0);
-  const [totalPings, setTotalPings] = useState(0);
-  const [processingTimeMs, setProcessingTimeMs] = useState(0);
+  
+  // Real-time Simulation State
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+  const [currentPingIndex, setCurrentPingIndex] = useState<number>(0);
+  const [totalPings, setTotalPings] = useState<number>(40);
+  const [frameImage, setFrameImage] = useState<string | undefined>(undefined);
+  const [frameWidth, setFrameWidth] = useState<number>(768);
+  const [frameHeight, setFrameHeight] = useState<number>(384);
+  
+  // Telemetry & QC
+  const [telemetry, setTelemetry] = useState({
+    latitude: 55.3214,
+    longitude: 14.8920,
+    heading_deg: 45.0,
+    altitude_m: 11.5,
+    depth_m: 48.5,
+    speed_knots: 3.0,
+    slant_range_m: 50.0,
+    frequency_khz: 900.0
+  });
+  const [qcStatus, setQcStatus] = useState<string>('PASS');
+  const [snrDb, setSnrDb] = useState<number>(24.2);
+  const [wsConnected, setWsConnected] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const playbackTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 1. Initial Load: Fetch existing contacts from backend
-  const fetchLiveContacts = async () => {
+  // 1. Fetch available missions and initial contacts
+  const fetchMissions = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/sonar/missions`);
+      if (res.ok) {
+        const data = await res.json();
+        setMissions(data.missions || []);
+        if (data.active_mission) {
+          setActiveMissionKey(data.active_mission);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch missions:', err);
+    }
+  };
+
+  const fetchContacts = async () => {
     try {
       const res = await fetch(`${API_BASE}/contacts`);
       if (res.ok) {
@@ -50,327 +103,311 @@ export default function MissionDashboard() {
         }
       }
     } catch (err) {
-      console.error('Failed to fetch initial contacts:', err);
+      console.error('Failed to fetch contacts:', err);
     }
   };
 
   useEffect(() => {
-    fetchLiveContacts();
+    fetchMissions();
+    fetchContacts();
+    // Fetch initial ping frame
+    stepMissionPing();
   }, []);
 
-  // 2. Real-Time WebSocket Telemetry Connection
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-    let reconnectTimer: any = null;
-
-    const connectWs = () => {
-      try {
-        ws = new WebSocket(WS_URL);
-
-        ws.onopen = () => {
-          setWsConnected(true);
-          setLiveStreamLogs((prev) => [
-            `[${new Date().toLocaleTimeString()}] Live Telemetry Stream Connected (ws://localhost:8000)`,
-            ...prev.slice(0, 15)
-          ]);
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-
-            if (data.event_type === 'PING_PROCESSED') {
-              setCurrentPingIndex(data.ping_index + 1);
-              setTotalPings(data.total_pings);
-              setQcStatus(data.qc_status);
-              setSnrDb(data.snr_db);
-              setProcessingTimeMs(data.processing_time_ms);
-
-              setLiveStreamLogs((prev) => [
-                `[${new Date().toLocaleTimeString()}] Ping #${data.ping_index + 1}/${data.total_pings}: QC ${data.qc_status} (SNR: ${data.snr_db}dB) • Found ${data.contacts_found_in_ping} contacts (${data.processing_time_ms}ms)`,
-                ...prev.slice(0, 15)
-              ]);
-
-              if (data.new_contacts && data.new_contacts.length > 0) {
-                setContacts((prev) => {
-                  const existingIds = new Set(prev.map((c) => c.contact_id));
-                  const fresh = data.new_contacts.filter(
-                    (c: ContactDigitalTwin) => !existingIds.has(c.contact_id)
-                  );
-                  const updated = [...prev, ...fresh];
-                  if (!selectedContact && updated.length > 0) {
-                    setSelectedContact(updated[0]);
-                  }
-                  return updated;
-                });
-              }
-            }
-          } catch (e) {
-            console.error('WebSocket parse error:', e);
-          }
-        };
-
-        ws.onclose = () => {
-          setWsConnected(false);
-          reconnectTimer = setTimeout(connectWs, 3000);
-        };
-
-        ws.onerror = () => {
-          setWsConnected(false);
-        };
-      } catch (err) {
-        console.error('WebSocket connection error:', err);
-      }
-    };
-
-    connectWs();
-
-    return () => {
-      if (ws) ws.close();
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
-  }, [selectedContact]);
-
-  // 3. Trigger Full Procedural Physics Survey & Live Processing Stream
-  const handleGenerateAndProcessSurvey = async (targetType: string = 'ghost_net') => {
-    setIsProcessing(true);
-    setLiveStreamLogs((prev) => [
-      `[${new Date().toLocaleTimeString()}] Initiating Sonar Survey Stream (${targetType.toUpperCase()})...`,
-      ...prev
-    ]);
-
+  // 2. Select Mission
+  const handleSelectMission = async (key: string) => {
     try {
-      const res = await fetch(`${API_BASE}/sonar/generate-and-process`, {
+      const res = await fetch(`${API_BASE}/sonar/missions/select`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          survey_id: `SRV-SSS-MISSION-${Date.now().toString().slice(-4)}`,
-          num_pings: 6,
-          seabed_type: 'sand_ripples',
-          target_type: targetType
-        })
+        body: JSON.stringify({ mission_key: key })
       });
-
       if (res.ok) {
-        const result = await res.json();
-        setSurveyId(result.survey_id);
-        fetchLiveContacts();
+        const data = await res.json();
+        setActiveMissionKey(key);
+        setCurrentPingIndex(0);
+        if (data.initial_payload) {
+          applyPingPayload(data.initial_payload);
+        }
       }
     } catch (err) {
-      console.error('Survey processing failed:', err);
-    } finally {
-      setIsProcessing(false);
+      console.error('Failed to select mission:', err);
     }
   };
 
-  // 4. Handle Custom Sonar File Upload
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // 3. Step Single Ping
+  const stepMissionPing = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/sonar/missions/step`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.payload) {
+          applyPingPayload(data.payload);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to step mission ping:', err);
+    }
+  };
+
+  // 4. Apply Incoming Ping Data
+  const applyPingPayload = (payload: any) => {
+    setCurrentPingIndex(payload.ping_index + 1);
+    setTotalPings(payload.total_pings || 40);
+    if (payload.frame_image) setFrameImage(payload.frame_image);
+    if (payload.frame_width) setFrameWidth(payload.frame_width);
+    if (payload.frame_height) setFrameHeight(payload.frame_height);
+    if (payload.telemetry) setTelemetry(payload.telemetry);
+    if (payload.qc_report) {
+      setQcStatus(payload.qc_report.overall_pass ? 'PASS' : 'WARN');
+      setSnrDb(payload.qc_report.snr_db || 20.0);
+    }
+
+    if (payload.contacts && payload.contacts.length > 0) {
+      setContacts((prev) => {
+        const existingIds = new Set(prev.map((c) => c.contact_id));
+        const newContacts = payload.contacts.filter((c: any) => !existingIds.has(c.contact_id));
+        const updated = [...newContacts, ...prev];
+        if (!selectedContact && updated.length > 0) {
+          setSelectedContact(updated[0]);
+        }
+        return updated;
+      });
+    }
+  };
+
+  // 5. Playback Timer Controller
+  useEffect(() => {
+    if (isPlaying) {
+      const intervalMs = Math.max(200, 1000 / playbackSpeed);
+      playbackTimerRef.current = setInterval(() => {
+        stepMissionPing();
+      }, intervalMs);
+    } else {
+      if (playbackTimerRef.current) {
+        clearInterval(playbackTimerRef.current);
+      }
+    }
+    return () => {
+      if (playbackTimerRef.current) clearInterval(playbackTimerRef.current);
+    };
+  }, [isPlaying, playbackSpeed]);
+
+  // 6. Handle Custom ZIP Survey Upload
+  const handleZipUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    setIsProcessing(true);
+    setIsUploading(true);
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('survey_id', 'SRV-INGEST-01');
+    formData.append('survey_title', file.name.replace(/\.[^/.]+$/, ''));
 
     try {
-      const uploadRes = await fetch(`${API_BASE}/sonar/upload`, {
+      const res = await fetch(`${API_BASE}/sonar/upload-zip-stream`, {
         method: 'POST',
         body: formData
       });
 
-      if (uploadRes.ok) {
-        const uploadData = await uploadRes.json();
-        // Process uploaded file
-        const processRes = await fetch(`${API_BASE}/sonar/process`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            survey_id: uploadData.survey_id,
-            file_path: uploadData.file_path,
-            altitude_m: 12.0,
-            slant_range_m: 50.0
-          })
-        });
-
-        if (processRes.ok) {
-          fetchLiveContacts();
+      if (res.ok) {
+        const data = await res.json();
+        await fetchMissions();
+        setActiveMissionKey(data.mission_key);
+        if (data.initial_payload) {
+          applyPingPayload(data.initial_payload);
         }
+        setShowUploadModal(false);
+      } else {
+        const errData = await res.json();
+        alert(`Upload error: ${errData.detail || 'Failed to process ZIP file'}`);
       }
     } catch (err) {
-      console.error('Upload error:', err);
+      console.error('Upload failed:', err);
+      alert('Network error during survey ZIP upload.');
     } finally {
-      setIsProcessing(false);
+      setIsUploading(false);
     }
   };
 
-  // 5. Handle Operator Review Submission
-  const handleReviewSubmit = async (
-    contactId: string,
-    decision: string,
-    subtype: string,
-    notes: string
-  ) => {
+  // 7. Active Mission Details
+  const currentMission = missions.find((m) => m.key === activeMissionKey) || {
+    key: 'baltic_debris',
+    mission_id: 'MSN-BALTIC-SWDD-01',
+    title: 'Baltic Sea Debris & Ordnance Patrol',
+    region: 'Bornholm Basin',
+    environment: 'Historic Munitions Zone',
+    nominal_depth_m: 48.5,
+    nominal_altitude_m: 11.5,
+    origin_coords: [55.3214, 14.8920] as [number, number],
+    speed_knots: 3.0,
+    total_pings: 40,
+    is_active: true
+  };
+
+  // 8. Handle Review Submission
+  const handleReviewSubmit = async (contactId: string, decision: string, subtype: string, notes: string) => {
     try {
       const res = await fetch(`${API_BASE}/contacts/${contactId}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reviewer_id: 'OPERATOR-CHIEF',
-          decision,
-          target_subtype: subtype,
-          confidence_rating: 5,
-          flagged_for_cleanup: true,
-          notes
-        })
+        body: JSON.stringify({ decision, subtype, notes })
       });
-
       if (res.ok) {
+        const updated = await res.json();
         setContacts((prev) =>
-          prev.map((c) => {
-            if (c.contact_id === contactId) {
-              const updated = {
-                ...c,
-                triage_state: `REVIEWED_${decision}`,
-                human_review: {
-                  reviewed_by: 'OPERATOR-CHIEF',
-                  review_timestamp: new Date().toISOString(),
-                  decision,
-                  target_subtype: subtype,
-                  confidence_rating: 5,
-                  notes
-                }
-              };
-              if (selectedContact?.contact_id === contactId) {
-                setSelectedContact(updated);
-              }
-              return updated;
-            }
-            return c;
-          })
+          prev.map((c) => (c.contact_id === contactId ? { ...c, ...updated, triage_state: decision } : c))
         );
+        if (selectedContact?.contact_id === contactId) {
+          setSelectedContact((prev) => prev ? { ...prev, ...updated, triage_state: decision } : null);
+        }
       }
     } catch (err) {
-      console.error('Review submit error:', err);
-    }
-  };
-
-  // 6. Clear Contacts Store
-  const handleClearStore = async () => {
-    try {
-      await fetch(`${API_BASE}/contacts`, { method: 'DELETE' });
-      setContacts([]);
-      setSelectedContact(null);
-      setLiveStreamLogs((prev) => [
-        `[${new Date().toLocaleTimeString()}] Sonar Contact Buffer Cleared`,
-        ...prev
-      ]);
-    } catch (err) {
-      console.error('Clear store error:', err);
+      console.error('Failed to submit review:', err);
     }
   };
 
   return (
-    <main className="min-h-screen flex flex-col bg-ocean-950 text-slate-100 font-sans">
-      {/* 1. Tactical Command Header */}
+    <div className="min-h-screen bg-[#030712] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
       <Navbar
-        surveyId={surveyId}
+        surveyId={currentMission.mission_id || 'MSN-BALTIC-SWDD-01'}
         qcStatus={qcStatus}
         totalContacts={contacts.length}
-        onRefresh={fetchLiveContacts}
+        onRefresh={() => {
+          fetchMissions();
+          fetchContacts();
+        }}
       />
 
-      {/* 2. Real-Time Telemetry & Action Stream Bar */}
-      <div className="bg-ocean-900/95 border-b border-ocean-800 px-4 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
-        {/* Stream Actions */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            disabled={isProcessing}
-            onClick={() => handleGenerateAndProcessSurvey('ghost_net')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-ocean-950 font-bold transition active:scale-95 disabled:opacity-50 shadow-md shadow-cyan-900/30"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>{isProcessing ? 'Processing Pings...' : 'Run Ghost Net Survey'}</span>
-          </button>
-
-          <button
-            disabled={isProcessing}
-            onClick={() => handleGenerateAndProcessSurvey('pipeline')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ocean-800 hover:bg-ocean-700 text-cyan-300 border border-ocean-700 font-bold transition active:scale-95 disabled:opacity-50"
-          >
-            <Waves className="w-3.5 h-3.5" />
-            <span>Pipeline Survey</span>
-          </button>
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ocean-800 hover:bg-ocean-700 text-slate-200 border border-ocean-700 font-bold transition active:scale-95"
-          >
-            <Upload className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Upload SSS File</span>
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.tif,.tiff"
-            className="hidden"
-            onChange={handleFileUpload}
-          />
-
-          <button
-            onClick={handleClearStore}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-ocean-900 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-ocean-800 transition"
-            title="Clear contacts buffer"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Reset</span>
-          </button>
-        </div>
-
-        {/* Live Gauges */}
-        <div className="flex items-center gap-4 flex-wrap text-[11px]">
-          <div className="flex items-center gap-1.5 text-slate-400">
-            <Radio className={`w-3.5 h-3.5 ${wsConnected ? 'text-emerald-400 animate-pulse' : 'text-rose-400'}`} />
-            <span>WS Stream:</span>
-            <span className={wsConnected ? 'text-emerald-300 font-bold' : 'text-rose-300 font-bold'}>
-              {wsConnected ? 'LIVE' : 'OFFLINE'}
-            </span>
+      {/* Main Ground Station Container */}
+      <main className="flex-1 max-w-[1780px] w-full mx-auto p-3 sm:p-5 flex flex-col gap-4">
+        {/* Mission Control & Telemetry Bar                                          */}
+        {/* ========================================================================= */}
+        <section className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-3.5 shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-between gap-4">
+          {/* Left: Mission Selector Dropdown */}
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+              <Compass className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">Active Survey Mission</div>
+              <select
+                value={activeMissionKey}
+                onChange={(e) => handleSelectMission(e.target.value)}
+                className="bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-100 focus:outline-none focus:border-cyan-400 cursor-pointer"
+              >
+                {missions.map((m) => (
+                  <option key={m.key} value={m.key}>
+                    {m.title} ({m.region})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 text-slate-400">
-            <Gauge className="w-3.5 h-3.5 text-cyan-400" />
-            <span>SNR:</span>
-            <span className="text-cyan-300 font-bold">{snrDb.toFixed(1)} dB</span>
+          {/* Center: Live Playback Controls */}
+          <div className="flex items-center gap-2.5 bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-1.5 shadow-inner">
+            <button
+              onClick={() => setIsPlaying(!isPlaying)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition shadow ${
+                isPlaying 
+                  ? 'bg-amber-500 text-slate-950 hover:bg-amber-400' 
+                  : 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
+              }`}
+            >
+              {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+              <span>{isPlaying ? 'PAUSE' : 'STREAM'}</span>
+            </button>
+
+            <button
+              onClick={stepMissionPing}
+              disabled={isPlaying}
+              className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40"
+              title="Step Next Ping"
+            >
+              <SkipForward className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Speed Multiplier */}
+            <div className="flex items-center gap-1 ml-2 text-[11px] font-mono">
+              {[0.5, 1.0, 2.0, 5.0].map((spd) => (
+                <button
+                  key={spd}
+                  onClick={() => setPlaybackSpeed(spd)}
+                  className={`px-1.5 py-0.5 rounded ${playbackSpeed === spd ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40' : 'text-slate-400 hover:text-slate-200'}`}
+                >
+                  {spd}x
+                </button>
+              ))}
+            </div>
+
+            {/* Ping Progress Counter */}
+            <div className="ml-3 pl-3 border-l border-slate-800 font-mono text-xs text-slate-300">
+              Ping <strong className="text-cyan-400">{currentPingIndex}</strong> / {totalPings}
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5 text-slate-400">
-            <Clock className="w-3.5 h-3.5 text-amber-400" />
-            <span>Ping Latency:</span>
-            <span className="text-amber-300 font-bold">{processingTimeMs > 0 ? `${processingTimeMs}ms` : '285ms'}</span>
+          {/* Right: Upload SSS ZIP & Telemetry Status */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowUploadModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 hover:border-slate-600 text-xs font-medium transition shadow"
+            >
+              <Upload className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Upload Sonar ZIP</span>
+            </button>
+
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              <span className="text-emerald-400 font-semibold">QC: {qcStatus}</span>
+              <span className="text-slate-500">|</span>
+              <span className="text-slate-300">{snrDb.toFixed(1)} dB</span>
+            </div>
+          </div>
+        </section>
+
+        {/* ========================================================================= */}
+        {/* Top Grid: Live Sonar Waterfall + Bathymetric GIS Map                     */}
+        {/* ========================================================================= */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* Left Column (7 cols): Dual-Channel Acoustic Waterfall */}
+          <div className="lg:col-span-7 flex flex-col">
+            <LiveWaterfallViewer
+              frameImage={frameImage}
+              frameWidth={frameWidth}
+              frameHeight={frameHeight}
+              contacts={contacts as any}
+              selectedContactId={selectedContact?.contact_id}
+              onSelectContact={(c: any) => setSelectedContact(c)}
+              slantRangeM={telemetry.slant_range_m}
+              frequencyKhz={telemetry.frequency_khz}
+              snrDb={snrDb}
+            />
           </div>
 
-          <div className="flex items-center gap-1.5 text-slate-400">
-            <Activity className="w-3.5 h-3.5 text-purple-400" />
-            <span>Calibration ECE:</span>
-            <span className="text-purple-300 font-bold">0.0062</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Main Mission Workspace */}
-      <div className="flex-1 p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-5 max-w-[1750px] w-full mx-auto">
-        {/* Left Column (7 cols): Interactive GIS Bathymetric Map & Triage Table */}
-        <div className="lg:col-span-7 flex flex-col gap-5">
-          <div className="flex-1 min-h-[460px]">
+          {/* Right Column (5 cols): Bathymetric GIS Map */}
+          <div className="lg:col-span-5 flex flex-col">
             <GisMap
               contacts={contacts}
               selectedContactId={selectedContact?.contact_id || null}
               onSelectContact={(c) => setSelectedContact(c)}
+              auvTelemetry={telemetry}
+              missionTitle={currentMission.title}
+              region={currentMission.region}
             />
           </div>
+        </div>
 
-          {/* Contact Triage Table */}
-          <div>
+        {/* ========================================================================= */}
+        {/* Bottom Grid: Triage Queue + Evidence & SHAP Explainability Inspector     */}
+        {/* ========================================================================= */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* Left Column (5 cols): Triage List */}
+          <div className="lg:col-span-5 flex flex-col">
             <TriageQueue
               contacts={contacts}
               selectedContactId={selectedContact?.contact_id || null}
@@ -378,32 +415,76 @@ export default function MissionDashboard() {
             />
           </div>
 
-          {/* Live Ping Execution Logs */}
-          <div className="bg-ocean-950/90 rounded-xl border border-ocean-800 p-3 font-mono text-[11px] text-slate-400 max-h-28 overflow-y-auto">
-            <div className="text-[10px] font-bold text-slate-300 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              Live Sonar Ping Execution Stream
-            </div>
-            {liveStreamLogs.length === 0 ? (
-              <div className="text-slate-600">Awaiting incoming ping telemetry...</div>
+          {/* Right Column (7 cols): Deep Evidence Inspector */}
+          <div className="lg:col-span-7 flex flex-col">
+            {selectedContact ? (
+              <EvidenceCard
+                contact={selectedContact}
+                onReviewSubmit={handleReviewSubmit}
+              />
             ) : (
-              liveStreamLogs.map((log, i) => (
-                <div key={i} className="text-slate-400 py-0.5 border-b border-ocean-900/50">
-                  {log}
-                </div>
-              ))
+              <div className="h-full min-h-[380px] flex flex-col items-center justify-center p-8 bg-slate-900/60 border border-slate-800 rounded-2xl text-center text-slate-500 font-mono text-xs">
+                <Activity className="w-8 h-8 mb-2 text-cyan-500/40 animate-pulse" />
+                <span>Select an acoustic contact from the waterfall, GIS map, or triage queue to inspect physical ray-tracing & SHAP attribution.</span>
+              </div>
             )}
           </div>
         </div>
+      </main>
 
-        {/* Right Column (5 cols): Physics Evidence Card */}
-        <div className="lg:col-span-5">
-          <EvidenceCard
-            contact={selectedContact}
-            onReviewSubmit={handleReviewSubmit}
-          />
+      {/* ========================================================================= */}
+      {/* Upload Survey ZIP Modal                                                  */}
+      {/* ========================================================================= */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <FolderArchive className="w-5 h-5 text-cyan-400" />
+                <h3 className="text-sm font-bold text-slate-100">Upload Sonar Survey Stream (ZIP)</h3>
+              </div>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="text-slate-400 hover:text-slate-200 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Upload any ZIP archive containing raw sonar waterfall frames (PNG, JPG, TIF). AbyssEye will unzip, index navigation telemetry, and launch real-time acoustic streaming.
+            </p>
+
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-slate-700 hover:border-cyan-500/80 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer bg-slate-950/50 transition group"
+            >
+              <Upload className="w-8 h-8 text-slate-400 group-hover:text-cyan-400 mb-2 transition" />
+              <span className="text-xs font-medium text-slate-300 group-hover:text-cyan-300">
+                {isUploading ? 'Extracting & Indexing Sonar Pings...' : 'Click to select .ZIP survey archive'}
+              </span>
+              <span className="text-[10px] text-slate-500 mt-1">Supports multi-megabyte XTF/image sequences</span>
+            </div>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".zip"
+              onChange={handleZipUpload}
+              className="hidden"
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </main>
+      )}
+    </div>
   );
 }

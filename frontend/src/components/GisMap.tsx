@@ -1,124 +1,148 @@
 'use client';
 
 import React from 'react';
-import { ContactDigitalTwin } from '@/types/contact';
-import { MapPin, Navigation, Compass, Radio } from 'lucide-react';
+import { Navigation, Compass, Radio, Target, Waves } from 'lucide-react';
 
 interface GisMapProps {
-  contacts: ContactDigitalTwin[];
+  contacts: any[];
   selectedContactId: string | null;
-  onSelectContact: (contact: ContactDigitalTwin) => void;
+  onSelectContact: (contact: any) => void;
+  auvTelemetry?: {
+    latitude: number;
+    longitude: number;
+    heading_deg: number;
+    altitude_m: number;
+    depth_m: number;
+    speed_knots: number;
+  };
+  missionTitle?: string;
+  region?: string;
 }
 
 export const GisMap: React.FC<GisMapProps> = ({
   contacts,
   selectedContactId,
-  onSelectContact
+  onSelectContact,
+  auvTelemetry = {
+    latitude: 55.3214,
+    longitude: 14.8920,
+    heading_deg: 45.0,
+    altitude_m: 11.5,
+    depth_m: 48.5,
+    speed_knots: 3.0
+  },
+  missionTitle = "Baltic Sea Debris Patrol",
+  region = "Bornholm Basin"
 }) => {
   return (
-    <div className="relative w-full h-full min-h-[460px] bg-ocean-950 rounded-2xl border border-ocean-700/80 overflow-hidden shadow-2xl flex flex-col">
-      {/* Map Control Bar Overlay */}
-      <div className="absolute top-3.5 left-3.5 z-10 flex items-center gap-2 bg-ocean-900/95 backdrop-blur px-3 py-1.5 rounded-xl border border-ocean-700/80 shadow-xl">
-        <Navigation className="w-3.5 h-3.5 text-cyan-400" />
-        <span className="text-xs font-mono font-bold text-slate-100">Bathymetric Survey GIS Swath</span>
-        <span className="text-[10px] font-mono text-cyan-400 border-l border-ocean-700 pl-2">
-          EPSG:4326 (WGS84)
-        </span>
-      </div>
-
-      {/* Map Layer Legend Overlay */}
-      <div className="absolute top-3.5 right-3.5 z-10 flex items-center gap-3 bg-ocean-900/95 backdrop-blur px-3 py-1.5 rounded-xl border border-ocean-700/80 text-[10px] font-mono font-bold shadow-xl">
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50" />
-          <span className="text-slate-200">Debris (&gt;80%)</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-sm shadow-amber-400/50" />
-          <span className="text-slate-200">Review (40-80%)</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
-          <span className="text-slate-200">Natural (&lt;40%)</span>
-        </div>
-      </div>
-
-      {/* Interactive Bathymetric Grid & Contacts Overlay */}
-      <div className="relative flex-1 w-full bg-[#050e1f] p-6 flex items-center justify-center overflow-hidden">
-        {/* Bathymetric depth contour lines */}
-        <svg className="absolute inset-0 w-full h-full opacity-35 pointer-events-none">
-          <path d="M0,60 Q300,100 600,50 T1200,80" fill="none" stroke="#0284c7" strokeWidth="1.2" strokeDasharray="5 3" />
-          <path d="M0,160 Q400,210 800,140 T1200,200" fill="none" stroke="#0ea5e9" strokeWidth="1.2" strokeDasharray="5 3" />
-          <path d="M0,290 Q350,340 750,260 T1200,310" fill="none" stroke="#06b6d4" strokeWidth="1.2" strokeDasharray="5 3" />
-          <path d="M0,420 Q500,470 900,390 T1200,430" fill="none" stroke="#14b8a6" strokeWidth="1.2" strokeDasharray="5 3" />
-        </svg>
-
-        {/* Sonar Swath Polygon & Trackline */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none">
-          <polygon
-            points="140,430 200,60 340,60 280,430"
-            fill="rgba(6, 182, 212, 0.07)"
-            stroke="rgba(6, 182, 212, 0.4)"
-            strokeWidth="1"
-            strokeDasharray="4 2"
-          />
-          <line x1="210" y1="430" x2="270" y2="60" stroke="#06b6d4" strokeWidth="2.5" />
-        </svg>
-
-        {/* Dynamic Contact Markers */}
-        {contacts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center text-slate-500 font-mono text-xs z-10">
-            <Radio className="w-8 h-8 mb-2 text-cyan-500/50 animate-pulse" />
-            <span>Ready for Survey Stream — Click "Generate Survey" or Ingest Sonar Pings</span>
+    <div className="relative w-full h-full min-h-[380px] bg-slate-950 rounded-xl border border-slate-800 overflow-hidden shadow-2xl flex flex-col backdrop-blur-md">
+      {/* Top Header Overlay */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900/90 border-b border-slate-800/80 z-10">
+        <div className="flex items-center gap-2">
+          <div className="p-1 rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+            <Compass className="w-3.5 h-3.5" />
           </div>
-        ) : (
-          <div className="relative w-full h-full">
-            {contacts.map((contact, idx) => {
-              const isSelected = contact.contact_id === selectedContactId;
-              const p_anth = contact.fusion_decision.calibrated_probabilities.p_anthropogenic;
-              
-              // Calculate spatial placement along simulated trackline
-              const topOffset = 18 + ((idx * 17) % 65);
-              const leftOffset = contact.channel === 'STARBOARD' ? (38 + ((idx * 11) % 40)) : (14 + ((idx * 9) % 22));
+          <div>
+            <div className="text-xs font-semibold text-slate-200">{missionTitle}</div>
+            <div className="text-[10px] font-mono text-slate-400">{region} • EPSG:4326 (WGS84)</div>
+          </div>
+        </div>
 
-              const markerBg = p_anth > 0.80 ? 'bg-rose-500 text-white' : p_anth > 0.40 ? 'bg-amber-400 text-ocean-950' : 'bg-emerald-400 text-ocean-950';
+        {/* Live Coordinate Pill */}
+        <div className="flex items-center gap-3 font-mono text-[11px] bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+          <span className="text-cyan-400">
+            {auvTelemetry.latitude.toFixed(4)}°N, {auvTelemetry.longitude.toFixed(4)}°E
+          </span>
+          <span className="text-slate-600">|</span>
+          <span className="text-amber-400">HDG: {auvTelemetry.heading_deg.toFixed(0)}°</span>
+          <span className="text-slate-600">|</span>
+          <span className="text-emerald-400">ALT: {auvTelemetry.altitude_m.toFixed(1)}m</span>
+        </div>
+      </div>
 
-              return (
-                <button
-                  key={contact.contact_id}
-                  onClick={() => onSelectContact(contact)}
-                  style={{ top: `${topOffset}%`, left: `${leftOffset}%` }}
-                  className={`absolute transform -translate-x-1/2 -translate-y-1/2 group transition-all z-20 ${
-                    isSelected ? 'scale-125 z-30' : 'hover:scale-110'
+      {/* GIS Canvas & Vector Map Area */}
+      <div className="relative flex-1 w-full bg-[#040913] flex items-center justify-center overflow-hidden select-none">
+        {/* Bathymetric Depth Contours */}
+        <svg className="absolute inset-0 w-full h-full opacity-20 pointer-events-none">
+          <defs>
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="0.8" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
+          <path d="M-100,80 Q300,140 700,60 T1400,100" fill="none" stroke="#0ea5e9" strokeWidth="1.5" strokeDasharray="6 4" />
+          <path d="M-100,180 Q400,240 850,160 T1400,220" fill="none" stroke="#06b6d4" strokeWidth="1.5" strokeDasharray="6 4" />
+          <path d="M-100,310 Q350,380 800,290 T1400,340" fill="none" stroke="#14b8a6" strokeWidth="1.5" strokeDasharray="6 4" />
+        </svg>
+
+        {/* Dynamic AUV Trackline & Swath Cone */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          {/* Swath Beam Projection */}
+          <div
+            style={{ transform: `rotate(${auvTelemetry.heading_deg}deg)` }}
+            className="relative w-48 h-64 transition-transform duration-300 flex flex-col items-center justify-center"
+          >
+            {/* Projected Sonar Fan */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-52 bg-gradient-to-t from-cyan-500/10 via-cyan-500/5 to-transparent clip-path-fan border-t border-cyan-500/30 rounded-t-full" />
+            
+            {/* AUV Vehicle Icon */}
+            <div className="relative z-20 flex items-center justify-center w-8 h-8 rounded-full bg-cyan-500/20 border-2 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.8)]">
+              <Navigation className="w-4 h-4 text-cyan-300" />
+            </div>
+
+            {/* Vessel Pulsing Ring */}
+            <div className="absolute w-12 h-12 rounded-full border border-cyan-400/40 animate-ping" />
+          </div>
+        </div>
+
+        {/* Contact Pins Overlay */}
+        <div className="relative w-full h-full">
+          {contacts.map((contact, idx) => {
+            const isSelected = contact.contact_id === selectedContactId;
+            const pAnth = contact.fusion_decision?.calibrated_probabilities?.p_anthropogenic ?? (contact.confidence || 0.85);
+            const isDebris = pAnth > 0.75;
+
+            // Distribution along GIS screen coordinates
+            const posX = 15 + ((idx * 23 + (contact.channel === 'STARBOARD' ? 35 : 0)) % 70);
+            const posY = 20 + ((idx * 19) % 60);
+
+            return (
+              <button
+                key={contact.contact_id || idx}
+                onClick={() => onSelectContact(contact)}
+                style={{ top: `${posY}%`, left: `${posX}%` }}
+                className={`absolute transform -translate-x-1/2 -translate-y-1/2 group transition-all z-20 ${
+                  isSelected ? 'scale-125 z-30' : 'hover:scale-110'
+                }`}
+              >
+                {isDebris && (
+                  <span className="absolute -inset-2 rounded-full bg-rose-500/40 animate-ping pointer-events-none" />
+                )}
+                <div
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-mono text-[10px] font-bold shadow-lg border ${
+                    isSelected
+                      ? 'bg-cyan-500 text-slate-950 border-white shadow-cyan-500/50'
+                      : isDebris
+                        ? 'bg-rose-500/90 text-white border-rose-400 shadow-rose-500/30'
+                        : 'bg-amber-500/90 text-slate-950 border-amber-300 shadow-amber-500/30'
                   }`}
                 >
-                  {/* Radar Pulse for High-Risk Ghost Nets and Debris */}
-                  {p_anth > 0.80 && (
-                    <span className="absolute -inset-2.5 rounded-full bg-rose-500 opacity-40 animate-sonar pointer-events-none" />
-                  )}
+                  <Target className="w-3 h-3" />
+                  <span>{(contact.classification || 'ANOMALY').replace('_', ' ').slice(0, 10)}</span>
+                  <span>{(pAnth * 100).toFixed(0)}%</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
 
-                  {/* Marker Pin */}
-                  <div className={`flex items-center gap-1 px-2 py-0.5 rounded font-mono font-bold text-[11px] shadow-lg border-2 ${markerBg} ${
-                    isSelected ? 'border-white ring-4 ring-cyan-400/60' : 'border-ocean-950'
-                  }`}>
-                    <MapPin className="w-3 h-3 fill-current" />
-                    <span>{contact.contact_id.split('-').pop()}</span>
-                  </div>
-
-                  {/* Tooltip */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 rounded-xl bg-ocean-950/95 border border-ocean-700 text-left text-xs shadow-2xl pointer-events-none z-40 font-mono">
-                    <div className="font-bold text-cyan-300 text-[11px]">{contact.contact_id}</div>
-                    <div className="text-[10px] text-slate-300 font-semibold mt-1">
-                      Type: <span className="text-yellow-400">{contact.target_type_hint.replace('_', ' ')}</span>
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">
-                      P(Debris): <span className="text-rose-400 font-bold">{(p_anth * 100).toFixed(1)}%</span> • Ch: {contact.channel}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {/* Map Corner Scale */}
+        <div className="absolute bottom-2 right-3 flex items-center gap-2 px-2 py-1 rounded bg-slate-950/80 border border-slate-800 text-[10px] font-mono text-slate-400">
+          <Waves className="w-3 h-3 text-cyan-400" />
+          <span>Depth: <strong>{auvTelemetry.depth_m.toFixed(1)}m</strong></span>
+          <span className="text-slate-600">|</span>
+          <span>Speed: <strong>{auvTelemetry.speed_knots.toFixed(1)} kts</strong></span>
+        </div>
       </div>
     </div>
   );
