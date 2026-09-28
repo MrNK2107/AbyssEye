@@ -44,6 +44,7 @@ export default function MissionDashboard() {
   const [missions, setMissions] = useState<MissionSummary[]>([]);
   const [activeMissionKey, setActiveMissionKey] = useState<string>('umich_thunderbay');
   const [contacts, setContacts] = useState<ContactDigitalTwin[]>([]);
+  const [currentFrameContacts, setCurrentFrameContacts] = useState<ContactDigitalTwin[]>([]);
   const [selectedContact, setSelectedContact] = useState<ContactDigitalTwin | null>(null);
   
   // Real-time Simulation State
@@ -98,9 +99,15 @@ export default function MissionDashboard() {
       const res = await fetch(`${API_BASE}/contacts`);
       if (res.ok) {
         const data: ContactDigitalTwin[] = await res.json();
-        setContacts(data);
-        if (data.length > 0 && !selectedContact) {
-          setSelectedContact(data[0]);
+        // Sort with high-priority anthropogenic contacts first
+        const sorted = data.sort((a, b) => {
+          const pA = a.fusion_decision?.calibrated_probabilities?.p_anthropogenic ?? (a as any).confidence ?? 0;
+          const pB = b.fusion_decision?.calibrated_probabilities?.p_anthropogenic ?? (b as any).confidence ?? 0;
+          return pB - pA;
+        });
+        setContacts(sorted);
+        if (sorted.length > 0 && !selectedContact) {
+          setSelectedContact(sorted[0]);
         }
       }
     } catch (err) {
@@ -126,6 +133,7 @@ export default function MissionDashboard() {
         const data = await res.json();
         setActiveMissionKey(key);
         setCurrentPingIndex(0);
+        setCurrentFrameContacts([]);
         if (data.initial_payload) {
           applyPingPayload(data.initial_payload);
         }
@@ -168,11 +176,18 @@ export default function MissionDashboard() {
       setSnrDb(payload.qc_report.snr_db || 24.2);
     }
 
-    if (payload.contacts && payload.contacts.length > 0) {
+    const pingContacts: ContactDigitalTwin[] = payload.contacts || [];
+    setCurrentFrameContacts(pingContacts);
+
+    if (pingContacts.length > 0) {
       setContacts((prev) => {
         const existingIds = new Set(prev.map((c) => c.contact_id));
-        const newContacts = payload.contacts.filter((c: any) => !existingIds.has(c.contact_id));
-        const updated = [...newContacts, ...prev];
+        const newItems = pingContacts.filter((c: any) => !existingIds.has(c.contact_id));
+        const updated = [...newItems, ...prev].sort((a, b) => {
+          const pA = a.fusion_decision?.calibrated_probabilities?.p_anthropogenic ?? (a as any).confidence ?? 0;
+          const pB = b.fusion_decision?.calibrated_probabilities?.p_anthropogenic ?? (b as any).confidence ?? 0;
+          return pB - pA;
+        });
         if (!selectedContact && updated.length > 0) {
           setSelectedContact(updated[0]);
         }
@@ -397,7 +412,7 @@ export default function MissionDashboard() {
               preprocessedFrameImage={preprocessedFrameImage}
               frameWidth={frameWidth}
               frameHeight={frameHeight}
-              contacts={contacts as any}
+              contacts={currentFrameContacts as any}
               selectedContactId={selectedContact?.contact_id}
               onSelectContact={(c: any) => setSelectedContact(c)}
               slantRangeM={telemetry.slant_range_m}

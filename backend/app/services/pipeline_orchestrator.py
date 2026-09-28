@@ -140,8 +140,8 @@ class PipelineOrchestrator:
         
         all_raw_props = classical_props + patchcore_props
         fused_props = ProposalFusionEngine.fuse_proposals(all_raw_props, iou_threshold=0.30)
-        # Keep top-15 highest confidence candidates for real-time triage
-        fused_props = sorted(fused_props, key=lambda p: p.confidence, reverse=True)[:15]
+        # Keep top-4 highest confidence candidates to keep UI clean and responsive
+        fused_props = sorted(fused_props, key=lambda p: p.confidence, reverse=True)[:4]
 
         # Stage 4: Multi-Ping Kalman Tracking
         active_tracks = self.tracker.update(fused_props, ping_index=ping_index)
@@ -187,6 +187,25 @@ class PipelineOrchestrator:
 
             fusion_decision = self.fusion_model.predict(feature_dict)
 
+            # Accurate, contextual target subtype hint
+            p_anth = getattr(fusion_decision, "p_anthropogenic", 0.85)
+            if fusion_decision.triage_state == "HIGH_CONFIDENCE" or p_anth > 0.65:
+                if filament_ev.is_net_like or filament_ev.filament_density > 0.35:
+                    target_hint = "GHOST_NET"
+                elif "pipeline" in str(prop.detector_class).lower():
+                    target_hint = "PIPELINE"
+                elif "wreck" in str(prop.detector_class).lower() or physics_ev.estimated_target_height_m > 1.2:
+                    target_hint = "SHIPWRECK"
+                else:
+                    target_hint = "MARINE_DEBRIS"
+            elif fusion_decision.triage_state == "REVIEW" or p_anth > 0.30:
+                if filament_ev.is_net_like:
+                    target_hint = "SUSPECTED_NET"
+                else:
+                    target_hint = "ACOUSTIC_ANOMALY"
+            else:
+                target_hint = "NATURAL_SEABED"
+
             # Stage 8: Geolocation Ray-Tracing
             geo_info = SonarGeoreferencer.calculate_contact_coordinates(
                 vessel_lat=frame_record.latitude or 54.8210,
@@ -212,7 +231,7 @@ class PipelineOrchestrator:
                 "centroid": [round(float(prop.centroid[0]), 1), round(float(prop.centroid[1]), 1)],
                 "channel": "STARBOARD" if is_starboard else "PORT",
                 "triage_state": fusion_decision.triage_state,
-                "target_type_hint": "GHOST_NET" if filament_ev.is_net_like else (prop.detector_class if prop.detector_class != "unknown" else "UNKNOWN_ANOMALY"),
+                "target_type_hint": target_hint,
                 
                 "spatial_telemetry": {
                     **geo_info,

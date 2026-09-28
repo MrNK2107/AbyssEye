@@ -19,16 +19,21 @@ export const TriageQueue: React.FC<TriageQueueProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   const filteredContacts = contacts.filter((c) => {
+    const pAnth = c.fusion_decision?.calibrated_probabilities?.p_anthropogenic ?? (c as any).confidence ?? 0.85;
+    const isDebris = pAnth >= 0.50 || c.triage_state === 'HIGH_CONFIDENCE';
+    const isReview = !isDebris && (pAnth >= 0.30 || c.triage_state === 'REVIEW');
+    const isNatural = !isDebris && !isReview;
+
     const matchesFilter =
       filterState === 'ALL' ||
-      (filterState === 'DEBRIS' && c.triage_state === 'HIGH_CONFIDENCE') ||
-      (filterState === 'REVIEW' && c.triage_state === 'REVIEW') ||
-      (filterState === 'NATURAL' && c.triage_state.includes('NATURAL'));
+      (filterState === 'DEBRIS' && isDebris) ||
+      (filterState === 'REVIEW' && isReview) ||
+      (filterState === 'NATURAL' && isNatural);
 
     const matchesSearch =
-      c.contact_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.target_type_hint.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      c.channel.toLowerCase().includes(searchTerm.toLowerCase());
+      (c.contact_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.target_type_hint || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (c.channel || '').toLowerCase().includes(searchTerm.toLowerCase());
 
     return matchesFilter && matchesSearch;
   });
