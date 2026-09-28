@@ -1,8 +1,11 @@
-.PHONY: all setup test lint train batch-extract build up down prod-up prod-down clean
+.PHONY: all setup run dev test lint train batch-extract build up down prod-up prod-down clean
 
 PYTHON ?= python
 
 all: setup test
+
+run dev:
+	$(PYTHON) run.py
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
