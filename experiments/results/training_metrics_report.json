@@ -1,0 +1,11 @@
+{
+  "roc_auc": 0.9934,
+  "brier_score": 0.0036,
+  "expected_calibration_error": 0.0075,
+  "macro_f1": 0.9891,
+  "precision": 0.9956,
+  "recall": 0.9827,
+  "total_samples": 1224,
+  "positive_samples": 231,
+  "negative_samples": 993
+}
