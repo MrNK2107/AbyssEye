@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useState } from 'react';
-import { Layers, ZoomIn, Eye, Activity, Crosshair } from 'lucide-react';
+import { Activity, Crosshair, SplitSquareVertical, SlidersHorizontal, Sparkles } from 'lucide-react';
 
 interface Contact {
   contact_id: string;
@@ -18,6 +18,8 @@ interface Contact {
 
 interface LiveWaterfallViewerProps {
   frameImage?: string;
+  rawFrameImage?: string;
+  preprocessedFrameImage?: string;
   frameWidth?: number;
   frameHeight?: number;
   contacts?: Contact[];
@@ -30,17 +32,20 @@ interface LiveWaterfallViewerProps {
 
 export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
   frameImage,
+  rawFrameImage,
+  preprocessedFrameImage,
   frameWidth = 768,
   frameHeight = 384,
   contacts = [],
   selectedContactId,
   onSelectContact,
   slantRangeM = 50.0,
-  frequencyKhz = 900.0,
+  frequencyKhz = 410.0,
   snrDb = 24.2
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [colormap, setColormap] = useState<'amber' | 'sepia' | 'jet' | 'navy'>('amber');
+  const [viewMode, setViewMode] = useState<'preprocessed' | 'raw' | 'split'>('preprocessed');
+  const [colormap, setColormap] = useState<'amber' | 'sepia' | 'navy'>('amber');
   const [showBoxes, setShowBoxes] = useState(true);
 
   // Draw acoustic frame on canvas
@@ -50,14 +55,40 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    if (frameImage) {
+    const activeImageSrc = 
+      viewMode === 'raw' 
+        ? (rawFrameImage || frameImage) 
+        : (preprocessedFrameImage || frameImage);
+
+    if (activeImageSrc) {
       const img = new Image();
       img.onload = () => {
         canvas.width = frameWidth;
         canvas.height = frameHeight;
-        ctx.drawImage(img, 0, 0, frameWidth, frameHeight);
 
-        // Apply color tint / filter if desired
+        if (viewMode === 'split' && rawFrameImage && preprocessedFrameImage) {
+          // Draw split screen: Left half Raw, Right half Preprocessed
+          const rawImg = new Image();
+          rawImg.onload = () => {
+            // Draw left half raw
+            ctx.drawImage(rawImg, 0, 0, frameWidth / 2, frameHeight, 0, 0, frameWidth / 2, frameHeight);
+            // Draw right half preprocessed
+            ctx.drawImage(img, frameWidth / 2, 0, frameWidth / 2, frameHeight, frameWidth / 2, 0, frameWidth / 2, frameHeight);
+            
+            // Split divider line
+            ctx.strokeStyle = '#06b6d4';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(frameWidth / 2, 0);
+            ctx.lineTo(frameWidth / 2, frameHeight);
+            ctx.stroke();
+          };
+          rawImg.src = rawFrameImage;
+        } else {
+          ctx.drawImage(img, 0, 0, frameWidth, frameHeight);
+        }
+
+        // Apply Colormap Tint
         if (colormap === 'amber') {
           ctx.globalCompositeOperation = 'multiply';
           ctx.fillStyle = 'rgba(255, 175, 40, 0.35)';
@@ -75,7 +106,7 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
           ctx.globalCompositeOperation = 'source-over';
         }
 
-        // Draw center nadir altitude line
+        // Center Nadir Altitude Line
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
@@ -84,35 +115,19 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
         ctx.stroke();
         ctx.setLineDash([]);
       };
-      img.src = frameImage;
+      img.src = activeImageSrc;
     } else {
-      // Default placeholder grid
       canvas.width = frameWidth;
       canvas.height = frameHeight;
       ctx.fillStyle = '#060d17';
       ctx.fillRect(0, 0, frameWidth, frameHeight);
-
-      ctx.strokeStyle = '#0f2238';
-      ctx.lineWidth = 1;
-      for (let x = 0; x < frameWidth; x += 48) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, frameHeight);
-        ctx.stroke();
-      }
-      for (let y = 0; y < frameHeight; y += 48) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(frameWidth, y);
-        ctx.stroke();
-      }
     }
-  }, [frameImage, frameWidth, frameHeight, colormap]);
+  }, [frameImage, rawFrameImage, preprocessedFrameImage, frameWidth, frameHeight, viewMode, colormap]);
 
   return (
     <div className="relative flex flex-col bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden shadow-2xl backdrop-blur-md">
       {/* Sonar Header Bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-950/80 border-b border-slate-800/80">
+      <div className="flex flex-wrap items-center justify-between px-4 py-2.5 bg-slate-950/90 border-b border-slate-800/80 gap-2">
         <div className="flex items-center gap-2.5">
           <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
             <Activity className="w-4 h-4" />
@@ -127,9 +142,37 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
           </div>
         </div>
 
-        {/* Colormap & Display Toggles */}
+        {/* View Mode & Colormap Selectors */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-[11px] font-medium">
+          {/* Signal Processing View Mode */}
+          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px] font-mono">
+            <button
+              onClick={() => setViewMode('preprocessed')}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded transition ${viewMode === 'preprocessed' ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40' : 'text-slate-400 hover:text-slate-200'}`}
+              title="Lee Despeckled + CLAHE Enhanced"
+            >
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+              <span>Enhanced</span>
+            </button>
+            <button
+              onClick={() => setViewMode('raw')}
+              className={`px-2 py-0.5 rounded transition ${viewMode === 'raw' ? 'bg-slate-800 text-slate-200 font-bold' : 'text-slate-400 hover:text-slate-200'}`}
+              title="Raw Sonar Backscatter"
+            >
+              Raw
+            </button>
+            <button
+              onClick={() => setViewMode('split')}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded transition ${viewMode === 'split' ? 'bg-purple-500/20 text-purple-300 font-bold border border-purple-500/40' : 'text-slate-400 hover:text-slate-200'}`}
+              title="Split View (Raw vs Enhanced)"
+            >
+              <SplitSquareVertical className="w-3 h-3" />
+              <span>Split</span>
+            </button>
+          </div>
+
+          {/* Colormap Selector */}
+          <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px] font-medium">
             <button
               onClick={() => setColormap('amber')}
               className={`px-2 py-0.5 rounded ${colormap === 'amber' ? 'bg-amber-500/20 text-amber-300 font-semibold' : 'text-slate-400 hover:text-slate-200'}`}
@@ -150,6 +193,7 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
             </button>
           </div>
 
+          {/* Bounding Box Toggle */}
           <button
             onClick={() => setShowBoxes(!showBoxes)}
             className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition ${
@@ -157,7 +201,7 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
                 : 'bg-slate-800 border-slate-700 text-slate-400'
             }`}
-            title="Toggle AI Bounding Boxes"
+            title="Toggle AI Detection Bounding Boxes"
           >
             <Crosshair className="w-3.5 h-3.5" />
           </button>
@@ -179,7 +223,7 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
           STARBOARD CH (+{slantRangeM}m)
         </div>
         <div className="absolute top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded bg-black/60 border border-white/10 text-[9px] font-mono text-amber-400/90 tracking-widest backdrop-blur-sm pointer-events-none">
-          NADIR
+          {viewMode === 'split' ? 'RAW ◄ | ► ENHANCED' : 'NADIR'}
         </div>
 
         {/* Bounding Box Overlays */}
@@ -192,7 +236,7 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
 
           const isAnthropogenic = c.classification.toLowerCase() !== 'natural_seabed' && c.classification.toLowerCase() !== 'natural_boulder';
           const borderColor = isSelected 
-            ? 'border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.6)]' 
+            ? 'border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.7)]' 
             : isAnthropogenic 
               ? 'border-emerald-400/90 shadow-[0_0_8px_rgba(52,211,153,0.3)]' 
               : 'border-amber-400/80';
@@ -221,11 +265,13 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
           );
         })}
 
-        {/* Quality Control Watermark */}
-        <div className="absolute bottom-2 left-3 flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-950/80 border border-slate-800 text-[11px] font-mono text-slate-400 backdrop-blur-sm pointer-events-none">
-          <span>SNR: <strong className={snrDb > 15 ? 'text-emerald-400' : 'text-amber-400'}>{snrDb.toFixed(1)} dB</strong></span>
+        {/* Live Filter Engine Watermark */}
+        <div className="absolute bottom-2 left-3 flex items-center gap-2 px-2.5 py-1 rounded-md bg-slate-950/80 border border-slate-800 text-[10px] font-mono text-slate-400 backdrop-blur-sm pointer-events-none">
+          <span className="text-cyan-400 font-semibold">
+            {viewMode === 'preprocessed' ? 'DSP: [Lee Despeckle 5x5 + CLAHE 2.5]' : viewMode === 'raw' ? 'DSP: [Raw Backscatter]' : 'DSP: [Dual-Split Mode]'}
+          </span>
           <span className="text-slate-600">|</span>
-          <span>Detections: <strong className="text-slate-200">{contacts.length}</strong></span>
+          <span>SNR: <strong className={snrDb > 15 ? 'text-emerald-400' : 'text-amber-400'}>{snrDb.toFixed(1)} dB</strong></span>
         </div>
       </div>
     </div>

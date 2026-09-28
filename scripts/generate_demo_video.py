@@ -33,7 +33,7 @@ def create_mission_demo_video(output_dir="demo", fps=10, num_frames=60):
 
     print(f"Generating {num_frames} frames for AbyssEye SIH Demo Video...")
 
-    mission_streamer.set_active_mission("baltic_debris")
+    mission_streamer.set_active_mission("umich_thunderbay")
 
     for f_idx in range(num_frames):
         # 1. Base Dark Tactical Canvas (Slate 950)

@@ -10,7 +10,7 @@ def test_mission_streamer_catalog_and_selection():
     keys = [m["key"] for m in missions]
     assert "baltic_debris" in keys
     assert "northsea_pipeline" in keys
-    assert "thunderbay_wreck" in keys
+    assert "umich_thunderbay" in keys
 
     # Test selecting mission
     ok = mission_streamer.set_active_mission("northsea_pipeline")
@@ -30,5 +30,5 @@ def test_mission_streamer_catalog_and_selection():
     idx = mission_streamer.advance_ping()
     assert idx >= 0
 
-    # Reset back to baltic_debris
-    mission_streamer.set_active_mission("baltic_debris")
+    # Reset back to umich_thunderbay
+    mission_streamer.set_active_mission("umich_thunderbay")

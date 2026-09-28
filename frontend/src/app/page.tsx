@@ -6,26 +6,23 @@ import { GisMap } from '@/components/GisMap';
 import { EvidenceCard } from '@/components/EvidenceCard';
 import { TriageQueue } from '@/components/TriageQueue';
 import { LiveWaterfallViewer } from '@/components/LiveWaterfallViewer';
+import { MissionReportModal } from '@/components/MissionReportModal';
 import { ContactDigitalTwin } from '@/types/contact';
 import { 
   Play, 
   Pause, 
   SkipForward, 
   Upload, 
-  Radio, 
   Compass, 
-  Gauge, 
-  Activity, 
-  Layers, 
-  ShieldCheck, 
-  Download,
-  RefreshCw,
+  FileText, 
   FolderArchive,
-  ChevronRight
+  Download,
+  Activity,
+  Layers,
+  Sparkles
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
-const WS_URL = 'ws://localhost:8000/api/v1/ws/live-stream';
 
 interface MissionSummary {
   key: string;
@@ -33,6 +30,8 @@ interface MissionSummary {
   title: string;
   region: string;
   environment: string;
+  platform?: string;
+  sonar_sensor?: string;
   origin_coords: [number, number];
   nominal_depth_m: number;
   nominal_altitude_m: number;
@@ -43,7 +42,7 @@ interface MissionSummary {
 
 export default function MissionDashboard() {
   const [missions, setMissions] = useState<MissionSummary[]>([]);
-  const [activeMissionKey, setActiveMissionKey] = useState<string>('baltic_debris');
+  const [activeMissionKey, setActiveMissionKey] = useState<string>('umich_thunderbay');
   const [contacts, setContacts] = useState<ContactDigitalTwin[]>([]);
   const [selectedContact, setSelectedContact] = useState<ContactDigitalTwin | null>(null);
   
@@ -51,27 +50,29 @@ export default function MissionDashboard() {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [currentPingIndex, setCurrentPingIndex] = useState<number>(0);
-  const [totalPings, setTotalPings] = useState<number>(40);
+  const [totalPings, setTotalPings] = useState<number>(286);
   const [frameImage, setFrameImage] = useState<string | undefined>(undefined);
+  const [rawFrameImage, setRawFrameImage] = useState<string | undefined>(undefined);
+  const [preprocessedFrameImage, setPreprocessedFrameImage] = useState<string | undefined>(undefined);
   const [frameWidth, setFrameWidth] = useState<number>(768);
   const [frameHeight, setFrameHeight] = useState<number>(384);
   
   // Telemetry & QC
   const [telemetry, setTelemetry] = useState({
-    latitude: 55.3214,
-    longitude: 14.8920,
-    heading_deg: 45.0,
-    altitude_m: 11.5,
-    depth_m: 48.5,
+    latitude: 45.0621,
+    longitude: -83.4312,
+    heading_deg: 135.0,
+    altitude_m: 12.0,
+    depth_m: 34.5,
     speed_knots: 3.0,
     slant_range_m: 50.0,
-    frequency_khz: 900.0
+    frequency_khz: 410.0
   });
   const [qcStatus, setQcStatus] = useState<string>('PASS');
   const [snrDb, setSnrDb] = useState<number>(24.2);
-  const [wsConnected, setWsConnected] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [showUploadModal, setShowUploadModal] = useState<boolean>(false);
+  const [showReportModal, setShowReportModal] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const playbackTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -110,7 +111,6 @@ export default function MissionDashboard() {
   useEffect(() => {
     fetchMissions();
     fetchContacts();
-    // Fetch initial ping frame
     stepMissionPing();
   }, []);
 
@@ -155,14 +155,17 @@ export default function MissionDashboard() {
   // 4. Apply Incoming Ping Data
   const applyPingPayload = (payload: any) => {
     setCurrentPingIndex(payload.ping_index + 1);
-    setTotalPings(payload.total_pings || 40);
+    setTotalPings(payload.total_pings || 286);
     if (payload.frame_image) setFrameImage(payload.frame_image);
+    if (payload.raw_frame_image) setRawFrameImage(payload.raw_frame_image);
+    if (payload.preprocessed_frame_image) setPreprocessedFrameImage(payload.preprocessed_frame_image);
     if (payload.frame_width) setFrameWidth(payload.frame_width);
     if (payload.frame_height) setFrameHeight(payload.frame_height);
     if (payload.telemetry) setTelemetry(payload.telemetry);
     if (payload.qc_report) {
-      setQcStatus(payload.qc_report.overall_pass ? 'PASS' : 'WARN');
-      setSnrDb(payload.qc_report.snr_db || 20.0);
+      const isPass = typeof payload.qc_report === 'object' ? (payload.qc_report.overall_pass ?? true) : true;
+      setQcStatus(isPass ? 'PASS' : 'WARN');
+      setSnrDb(payload.qc_report.snr_db || 24.2);
     }
 
     if (payload.contacts && payload.contacts.length > 0) {
@@ -233,16 +236,18 @@ export default function MissionDashboard() {
 
   // 7. Active Mission Details
   const currentMission = missions.find((m) => m.key === activeMissionKey) || {
-    key: 'baltic_debris',
-    mission_id: 'MSN-BALTIC-SWDD-01',
-    title: 'Baltic Sea Debris & Ordnance Patrol',
-    region: 'Bornholm Basin',
-    environment: 'Historic Munitions Zone',
-    nominal_depth_m: 48.5,
-    nominal_altitude_m: 11.5,
-    origin_coords: [55.3214, 14.8920] as [number, number],
+    key: 'umich_thunderbay',
+    mission_id: 'MSN-NOAA-IVER3-THUNDERBAY',
+    title: 'Thunder Bay AUV Sanctuary Mission (UMich AI4Shipwrecks)',
+    region: 'NOAA Thunder Bay Sanctuary (Lake Huron)',
+    environment: 'Historic Shipwreck Sanctuary • EdgeTech 2205 SSS',
+    platform: 'OceanServer Iver3 AUV',
+    sonar_sensor: 'EdgeTech 2205 Dual-Frequency SSS',
+    nominal_depth_m: 34.5,
+    nominal_altitude_m: 12.0,
+    origin_coords: [45.0621, -83.4312] as [number, number],
     speed_knots: 3.0,
-    total_pings: 40,
+    total_pings: 286,
     is_active: true
   };
 
@@ -271,7 +276,7 @@ export default function MissionDashboard() {
   return (
     <div className="min-h-screen bg-[#030712] text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-black">
       <Navbar
-        surveyId={currentMission.mission_id || 'MSN-BALTIC-SWDD-01'}
+        surveyId={currentMission.mission_id || 'MSN-NOAA-IVER3-THUNDERBAY'}
         qcStatus={qcStatus}
         totalContacts={contacts.length}
         onRefresh={() => {
@@ -282,6 +287,8 @@ export default function MissionDashboard() {
 
       {/* Main Ground Station Container */}
       <main className="flex-1 max-w-[1780px] w-full mx-auto p-3 sm:p-5 flex flex-col gap-4">
+        
+        {/* ========================================================================= */}
         {/* Mission Control & Telemetry Bar                                          */}
         {/* ========================================================================= */}
         <section className="bg-slate-900/90 border border-slate-800/90 rounded-2xl p-3.5 shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-between gap-4">
@@ -299,7 +306,7 @@ export default function MissionDashboard() {
               >
                 {missions.map((m) => (
                   <option key={m.key} value={m.key}>
-                    {m.title} ({m.region})
+                    {m.title}
                   </option>
                 ))}
               </select>
@@ -348,7 +355,7 @@ export default function MissionDashboard() {
             </div>
           </div>
 
-          {/* Right: Upload SSS ZIP & Telemetry Status */}
+          {/* Right: Upload SSS ZIP & Generate Report Buttons */}
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowUploadModal(true)}
@@ -356,6 +363,14 @@ export default function MissionDashboard() {
             >
               <Upload className="w-3.5 h-3.5 text-cyan-400" />
               <span>Upload Sonar ZIP</span>
+            </button>
+
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 text-xs font-bold transition shadow"
+            >
+              <FileText className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Survey Report</span>
             </button>
 
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono">
@@ -378,6 +393,8 @@ export default function MissionDashboard() {
           <div className="lg:col-span-7 flex flex-col">
             <LiveWaterfallViewer
               frameImage={frameImage}
+              rawFrameImage={rawFrameImage}
+              preprocessedFrameImage={preprocessedFrameImage}
               frameWidth={frameWidth}
               frameHeight={frameHeight}
               contacts={contacts as any}
@@ -485,6 +502,22 @@ export default function MissionDashboard() {
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* Hydrographic Survey Findings & Report Modal                              */}
+      {/* ========================================================================= */}
+      <MissionReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        missionId={currentMission.mission_id || 'MSN-NOAA-IVER3-THUNDERBAY'}
+        missionTitle={currentMission.title}
+        region={currentMission.region}
+        platform={currentMission.platform || 'OceanServer Iver3 AUV'}
+        sonarSensor={currentMission.sonar_sensor || 'EdgeTech 2205 Dual-Frequency SSS'}
+        totalPings={totalPings}
+        snrDb={snrDb}
+        contacts={contacts}
+      />
     </div>
   );
 }
