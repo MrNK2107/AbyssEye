@@ -64,8 +64,9 @@ pnpm-debug.log*
 Thumbs.db
 Desktop.ini
 
-# Agent Local Tooling
+# Agent & Pipeline Local Tooling
 .agents/
+.gsd-path/
 
 # Logs & Temporary Files
 *.tmp
