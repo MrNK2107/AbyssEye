@@ -81,7 +81,7 @@ class PatchCoreAnomalyDetector:
 
         full_bank = np.vstack(all_features)
         total_samples = len(full_bank)
-        num_coreset = max(10, int(total_samples * self.coreset_sampling_ratio))
+        num_coreset = min(500, max(10, int(total_samples * self.coreset_sampling_ratio)))
 
         # Greedy k-center coreset subsampling
         if total_samples <= num_coreset:
@@ -105,17 +105,20 @@ class PatchCoreAnomalyDetector:
         H, W = image.shape
         if self.memory_bank is None or len(self.memory_bank) == 0:
             # Initialize default baseline memory bank if unfitted
-            self.fit_normal_seabed([np.random.uniform(70, 140, (H, W)).astype(np.uint8)])
+            self.fit_normal_seabed([np.random.uniform(70, 140, (min(H, 512), min(W, 512))).astype(np.uint8)])
 
         feats, positions = self.extract_patch_features(image)
         if len(feats) == 0:
             return np.zeros((H, W), dtype=np.float32), 0.0
 
-        # Compute nearest neighbor Euclidean distances to memory bank
-        # ||z - m||_2
-        diffs = feats[:, np.newaxis, :] - self.memory_bank[np.newaxis, :, :]
-        dists = np.sqrt(np.sum(diffs**2, axis=-1))
-        min_dists = np.min(dists, axis=1)  # (N_patches,)
+        # Compute nearest neighbor Euclidean distances to memory bank in memory-safe chunks
+        from scipy.spatial.distance import cdist
+        chunk_size = 2000
+        min_dists = np.zeros(len(feats), dtype=np.float32)
+        for i in range(0, len(feats), chunk_size):
+            chunk = feats[i:i+chunk_size]
+            dists = cdist(chunk, self.memory_bank, metric='euclidean')
+            min_dists[i:i+chunk_size] = np.min(dists, axis=1)
 
         # Build 2D heatmap
         anomaly_map = np.zeros((H, W), dtype=np.float32)

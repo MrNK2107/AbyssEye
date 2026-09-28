@@ -117,6 +117,12 @@ class PipelineOrchestrator:
         ping_index: int = 0
     ) -> Tuple[QCReport, List[Dict[str, Any]]]:
         raw_img = frame_record.image_array
+        # Normalize ultra-high-resolution imagery to standard SSS processing grid
+        if raw_img.shape[1] > 1024 or raw_img.shape[0] > 768:
+            scale_w = 768 / raw_img.shape[1]
+            scale_h = 384 / raw_img.shape[0]
+            raw_img = cv2.resize(raw_img, (768, 384), interpolation=cv2.INTER_AREA)
+
         H, W = raw_img.shape
         nadir_col = W // 2
 
@@ -134,6 +140,8 @@ class PipelineOrchestrator:
         
         all_raw_props = classical_props + patchcore_props
         fused_props = ProposalFusionEngine.fuse_proposals(all_raw_props, iou_threshold=0.30)
+        # Keep top-15 highest confidence candidates for real-time triage
+        fused_props = sorted(fused_props, key=lambda p: p.confidence, reverse=True)[:15]
 
         # Stage 4: Multi-Ping Kalman Tracking
         active_tracks = self.tracker.update(fused_props, ping_index=ping_index)
