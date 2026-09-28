@@ -1,28 +1,24 @@
-# Byte-compiled / optimized / DLL files
+# Python & Virtual Environments
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
-# C extensions
 .Python
-
-# Distribution / packaging
-/build/
-/develop-eggs/
-/dist/
-/downloads/
-/eggs/
-/.eggs/
-/parts/
-/sdist/
-/var/
-/wheels/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Virtual Environments
 .env
 .env.*
 !.env.example
@@ -43,6 +39,7 @@ venv.bak/
 nosetests.xml
 coverage.xml
 *.cover
+*.log
 htmlcov/
 
 # Node & Frontend
@@ -59,7 +56,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# IDEs & OS Files
+# IDEs & System Files
 .vscode/
 .idea/
 *.swp
@@ -68,3 +65,8 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Logs & Temporary Files
+*.tmp
+*.bak
+*.swp
