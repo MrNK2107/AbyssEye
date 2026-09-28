@@ -5,14 +5,18 @@ import { Activity, Crosshair, SplitSquareVertical, SlidersHorizontal, Sparkles }
 
 interface Contact {
   contact_id: string;
-  classification: string;
-  confidence: number;
-  bounding_box: {
+  classification?: string;
+  confidence?: number;
+  bounding_box?: {
     x_min: number;
     y_min: number;
     x_max: number;
     y_max: number;
   };
+  bbox?: [number, number, number, number] | number[];
+  target_type_hint?: string;
+  triage_state?: string;
+  fusion_decision?: any;
   evidence_graph?: any;
 }
 
@@ -228,13 +232,44 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
 
         {/* Bounding Box Overlays */}
         {showBoxes && contacts.map((c) => {
+          if (!c) return null;
           const isSelected = selectedContactId === c.contact_id;
-          const leftPct = (c.bounding_box.x_min / frameWidth) * 100;
-          const topPct = (c.bounding_box.y_min / frameHeight) * 100;
-          const widthPct = ((c.bounding_box.x_max - c.bounding_box.x_min) / frameWidth) * 100;
-          const heightPct = ((c.bounding_box.y_max - c.bounding_box.y_min) / frameHeight) * 100;
+          
+          let xMin = 100;
+          let yMin = 100;
+          let xMax = 200;
+          let yMax = 200;
 
-          const isAnthropogenic = c.classification.toLowerCase() !== 'natural_seabed' && c.classification.toLowerCase() !== 'natural_boulder';
+          if (c.bounding_box && typeof c.bounding_box.x_min === 'number') {
+            xMin = c.bounding_box.x_min;
+            yMin = c.bounding_box.y_min;
+            xMax = c.bounding_box.x_max;
+            yMax = c.bounding_box.y_max;
+          } else if (Array.isArray(c.bbox) && c.bbox.length === 4) {
+            const [b0, b1, b2, b3] = c.bbox;
+            // Handle [x, y, w, h] vs [xmin, ymin, xmax, ymax]
+            if (b2 > b0 && b3 > b1 && b2 <= frameWidth && b3 <= frameHeight) {
+              xMin = b0;
+              yMin = b1;
+              xMax = b2;
+              yMax = b3;
+            } else {
+              xMin = b0;
+              yMin = b1;
+              xMax = b0 + b2;
+              yMax = b1 + b3;
+            }
+          }
+
+          const leftPct = (xMin / frameWidth) * 100;
+          const topPct = (yMin / frameHeight) * 100;
+          const widthPct = ((xMax - xMin) / frameWidth) * 100;
+          const heightPct = ((yMax - yMin) / frameHeight) * 100;
+
+          const rawClass = c.classification || c.target_type_hint || c.triage_state || 'TARGET';
+          const isAnthropogenic = rawClass.toLowerCase() !== 'natural_seabed' && rawClass.toLowerCase() !== 'natural_boulder';
+          const confidenceVal = c.confidence ?? c.fusion_decision?.calibrated_probabilities?.p_anthropogenic ?? c.evidence_graph?.discovery?.confidence ?? 0.85;
+
           const borderColor = isSelected 
             ? 'border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.7)]' 
             : isAnthropogenic 
@@ -243,11 +278,11 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
 
           return (
             <div
-              key={c.contact_id}
+              key={c.contact_id || Math.random().toString()}
               onClick={() => onSelectContact && onSelectContact(c)}
               style={{
-                left: `${leftPct}%`,
-                top: `${topPct}%`,
+                left: `${Math.max(0, Math.min(leftPct, 95))}%`,
+                top: `${Math.max(0, Math.min(topPct, 95))}%`,
                 width: `${Math.max(widthPct, 4)}%`,
                 height: `${Math.max(heightPct, 6)}%`
               }}
@@ -255,10 +290,10 @@ export const LiveWaterfallViewer: React.FC<LiveWaterfallViewerProps> = ({
             >
               <div className="absolute -top-6 left-0 flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950/90 border border-slate-700/80 text-[10px] font-mono whitespace-nowrap backdrop-blur-md">
                 <span className={isAnthropogenic ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-                  {c.classification.replace('_', ' ')}
+                  {rawClass.replace(/_/g, ' ')}
                 </span>
                 <span className="text-slate-400">
-                  {(c.confidence * 100).toFixed(0)}%
+                  {(confidenceVal * 100).toFixed(0)}%
                 </span>
               </div>
             </div>

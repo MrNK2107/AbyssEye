@@ -128,7 +128,7 @@ export const GisMap: React.FC<GisMapProps> = ({
                   }`}
                 >
                   <Target className="w-3 h-3" />
-                  <span>{(contact.classification || 'ANOMALY').replace('_', ' ').slice(0, 10)}</span>
+                  <span>{((contact.classification || contact.target_type_hint || 'ANOMALY') as string).replace(/_/g, ' ').slice(0, 12)}</span>
                   <span>{(pAnth * 100).toFixed(0)}%</span>
                 </div>
               </button>
