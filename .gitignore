@@ -68,6 +68,10 @@ Desktop.ini
 .agents/
 .gsd-path/
 
+# Large Raw Sonar Datasets
+data/raw/
+data/extracted/
+
 # Logs & Temporary Files
 *.tmp
 *.bak
