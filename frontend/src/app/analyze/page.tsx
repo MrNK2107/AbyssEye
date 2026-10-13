@@ -34,6 +34,7 @@ import {
   CLASS_COLORS,
   SONAR_IMAGES,
 } from '@/lib/prototypeData';
+import { detectAcousticTargets } from '@/lib/acousticDetector';
 
 interface AnalysisJob {
   analysis_id: string;
@@ -169,35 +170,28 @@ export default function AnalyzePage() {
     setSelectedIdx(0);
 
     const analysisId = `AN-${Math.floor(Date.now() / 1000).toString(36).toUpperCase()}`;
+    const navCoords = navFile ? { latitude: 36.8421, longitude: -5.4317 } : null;
 
-    // Base fallback detections from sample or defaults
-    const fallbackDetections: Detection[] = sample
-      ? sample.detections
-      : [
-          {
-            id: 'DET-001',
-            class_name: 'Ghost Net',
-            confidence: 0.93,
-            raw_confidence: 0.86,
-            validated: contextValidation,
-            bbox: [14, 20, 32, 54],
-            mask: [
-              [16, 23],
-              [43, 21],
-              [44, 71],
-              [17, 72],
-            ],
-            location: navFile ? { latitude: 36.8421, longitude: -5.4317 } : null,
-          },
-        ];
+    // Dynamically compute detections: if sample is chosen, use sample detections; otherwise, analyze image pixels
+    let finalDetections: Detection[] = [];
 
-    let finalDetections = fallbackDetections
-      .filter((d) => d.confidence >= threshold)
-      .map((d) => ({
-        ...d,
-        validated: contextValidation ? d.validated : false,
-        location: navFile ? { latitude: 36.8421, longitude: -5.4317 } : null,
-      }));
+    if (sample) {
+      finalDetections = sample.detections
+        .filter((d) => d.confidence >= threshold)
+        .map((d) => ({
+          ...d,
+          validated: contextValidation ? d.validated : false,
+          location: navCoords,
+        }));
+    } else {
+      // Real in-browser acoustic computer vision detection from image pixels
+      finalDetections = await detectAcousticTargets(
+        currentImage,
+        threshold,
+        contextValidation,
+        navCoords
+      );
+    }
 
     // Attempt real inference if file was uploaded to local FastAPI backend
     if (uploadFile && uploadFile.type.startsWith('image/')) {
