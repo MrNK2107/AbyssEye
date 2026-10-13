@@ -152,6 +152,7 @@ class PatchCoreAnomalyDetector:
 
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
 
+        H, W = image.shape
         proposals = []
         for i in range(1, num_labels):
             area = int(stats[i, cv2.CC_STAT_AREA])
@@ -160,6 +161,10 @@ class PatchCoreAnomalyDetector:
                 y = int(stats[i, cv2.CC_STAT_TOP])
                 w = int(stats[i, cv2.CC_STAT_WIDTH])
                 h = int(stats[i, cv2.CC_STAT_HEIGHT])
+
+                # Reject exact full frame boxes
+                if w >= int(W * 0.98) and h >= int(H * 0.98):
+                    continue
                 cx, cy = float(centroids[i][0]), float(centroids[i][1])
 
                 crop_anomaly = anomaly_map[y:y+h, x:x+w]

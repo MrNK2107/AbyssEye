@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { AnalysisProvider } from '@/context/AnalysisContext';
+import { AppShell } from '@/components/AppShell';
 
 export const metadata: Metadata = {
-  title: 'ABYSSEYE | Underwater Debris & Ghost Net Sonar Evidence Engine',
-  description: 'AI-Powered Automated Underwater Marine Debris and Anomaly Detection System using Side-Scan Sonar Imagery (SIH 2026 Problem 26057)',
+  title: 'ABYSSEYE — Underwater Sonar Intelligence',
+  description:
+    'AI-assisted side-scan sonar detection, segmentation and validation for underwater surveys.',
 };
 
 export default function RootLayout({
@@ -12,9 +15,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-ocean-950 text-slate-100 min-h-screen">
-        {children}
+    <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap"
+        />
+      </head>
+      <body>
+        <AnalysisProvider>
+          <AppShell>{children}</AppShell>
+        </AnalysisProvider>
       </body>
     </html>
   );

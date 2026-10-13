@@ -70,6 +70,11 @@ class ClassicalProposalEngine:
                 y = int(stats[i, cv2.CC_STAT_TOP])
                 w = int(stats[i, cv2.CC_STAT_WIDTH])
                 h = int(stats[i, cv2.CC_STAT_HEIGHT])
+
+                # Reject thin 1-2px noise slivers
+                if w <= 2 or h <= 2:
+                    continue
+
                 cx, cy = float(centroids[i][0]), float(centroids[i][1])
 
                 crop = image[y:y+h, x:x+w]
@@ -77,9 +82,9 @@ class ClassicalProposalEngine:
                 peak_val = float(np.max(crop)) if crop.size > 0 else 0.0
                 aspect_ratio = float(max(w, h) / max(1, min(w, h)))
 
-                # Normalized confidence based on peak local z-score
+                # Normalized confidence based on peak local z-score (calibrated to max 0.85)
                 local_z = (peak_val - local_mean[int(cy), int(cx)]) / max(1.0, local_std[int(cy), int(cx)])
-                conf = float(np.clip(local_z / 4.0, 0.2, 0.98))
+                conf = float(np.clip(local_z / 5.0, 0.20, 0.85))
 
                 prop_id = f"PROP-CLASSICAL-{frame_id}-{len(proposals)+1:03d}"
                 proposals.append(CandidateProposal(

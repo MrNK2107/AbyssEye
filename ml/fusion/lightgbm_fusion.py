@@ -113,15 +113,26 @@ class LightGBMEvidenceFusion:
         """
         x_vec = FeatureVectorAssembler.to_numpy_array(feature_dict).reshape(1, -1)
 
+        det_conf = float(feature_dict.get("detector_conf", 0.0))
+
         if self.model is None:
-            # Physics-based baseline heuristic if weights are initializing
-            score = (
-                0.25 * feature_dict["patchcore_anomaly"] +
-                0.25 * feature_dict["collinearity_score"] +
-                0.20 * feature_dict["persistence_ratio"] +
-                0.15 * feature_dict["filament_density"] +
-                0.15 * (1.0 if feature_dict["shadow_present"] > 0 else 0.0)
+            # Physics & supervised detection fusion heuristic
+            base_score = (
+                0.20 * float(feature_dict.get("patchcore_anomaly", 0.0)) +
+                0.20 * float(feature_dict.get("collinearity_score", 0.0)) +
+                0.15 * float(feature_dict.get("persistence_ratio", 0.0)) +
+                0.15 * float(feature_dict.get("filament_density", 0.0)) +
+                0.15 * (1.0 if feature_dict.get("shadow_present", 0) > 0 else 0.0) +
+                0.15 * min(1.0, float(feature_dict.get("estimated_height_m", 0.0)) / 2.0)
             )
+            # If supervised YOLO detected a target, fuse strongly with detector confidence
+            if det_conf > 0.25:
+                score = 0.55 * det_conf + 0.45 * base_score
+                if det_conf > 0.50:
+                    score = max(score, det_conf * 0.95)
+            else:
+                score = base_score
+
             raw_logit = float(np.log(max(1e-4, score) / max(1e-4, 1.0 - score)))
             p_anth = float(np.clip(score, 0.05, 0.95))
         else:
@@ -132,13 +143,16 @@ class LightGBMEvidenceFusion:
             else:
                 p_anth = raw_pred
 
+            if det_conf > 0.40:
+                p_anth = max(p_anth, det_conf * 0.90)
+
         # Calibrated 3-class distribution
         p_anth = float(np.clip(p_anth, 0.01, 0.98))
-        if p_anth > 0.80:
+        if p_anth >= 0.65:
             p_nat = float((1.0 - p_anth) * 0.75)
             p_unc = float(1.0 - p_anth - p_nat)
             triage = "HIGH_CONFIDENCE"
-        elif p_anth < 0.40:
+        elif p_anth < 0.35:
             p_nat = float(1.0 - p_anth - 0.05)
             p_unc = 0.05
             triage = "NATURAL_SEABED"

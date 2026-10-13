@@ -72,8 +72,15 @@ def wait_for_service(url: str, timeout_sec: int = 25) -> bool:
     return False
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     print("=================================================================", flush=True)
-    print("  ABYSSEYE — Autonomous Sonar Ground Station (SIH 26057)         ", flush=True)
+    print("  ABYSSEYE - Autonomous Sonar Ground Station (SIH 26057)         ", flush=True)
     print("=================================================================", flush=True)
 
     # 1. Clean any occupied ports
@@ -96,7 +103,7 @@ def main():
                     p.terminate()
         kill_process_on_port(BACKEND_PORT)
         kill_process_on_port(FRONTEND_PORT)
-        print("\n[✓] All services stopped. Goodbye!\n", flush=True)
+        print("\n[OK] All services stopped. Goodbye!\n", flush=True)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, cleanup)
@@ -127,15 +134,15 @@ def main():
         processes.append(frontend_proc)
 
         # 4. Wait for services to be ready
-        backend_ready = wait_for_service(f"http://{BACKEND_HOST}:{BACKEND_PORT}/health", timeout_sec=15)
-        frontend_ready = wait_for_service(f"http://localhost:{FRONTEND_PORT}", timeout_sec=25)
+        backend_ready = wait_for_service(f"http://{BACKEND_HOST}:{BACKEND_PORT}/health", timeout_sec=20)
+        frontend_ready = wait_for_service(f"http://localhost:{FRONTEND_PORT}", timeout_sec=30)
 
         if backend_ready and frontend_ready:
-            print(f"[✓] FastAPI Backend running on http://{BACKEND_HOST}:{BACKEND_PORT}", flush=True)
-            print(f"[✓] Next.js Frontend running on http://localhost:{FRONTEND_PORT}", flush=True)
-            print(f"[✓] REST API Docs: http://{BACKEND_HOST}:{BACKEND_PORT}/docs", flush=True)
+            print(f"[OK] FastAPI Backend running on http://{BACKEND_HOST}:{BACKEND_PORT}", flush=True)
+            print(f"[OK] Next.js Frontend running on http://localhost:{FRONTEND_PORT}", flush=True)
+            print(f"[OK] REST API Docs: http://{BACKEND_HOST}:{BACKEND_PORT}/docs", flush=True)
             print("-----------------------------------------------------------------", flush=True)
-            print("[✓] Ground Station is LIVE. Opening browser... (Press Ctrl+C to stop)", flush=True)
+            print("[OK] Ground Station is LIVE. Opening browser... (Press Ctrl+C to stop)", flush=True)
             print("=================================================================\n", flush=True)
 
             try:

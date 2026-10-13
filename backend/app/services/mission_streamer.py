@@ -189,6 +189,36 @@ class MissionStreamer:
                 except Exception as e:
                     logger.error(f"Error loading {key}: {e}")
 
+        # 3. Fallback for missions using local verified samples if full raw sets are not on disk
+        sample_map = {
+            "northsea_pipeline": "data/samples/subpipe_sample.jpg",
+            "baltic_debris": "data/samples/mine_sample.jpg",
+            "umich_thunderbay": "data/samples/shipwreck_sample.jpg"
+        }
+        for key, s_path in sample_map.items():
+            if key not in self.cached_frames or len(self.cached_frames[key]) == 0:
+                if os.path.exists(s_path):
+                    m_cfg = PRECONFIGURED_MISSIONS[key]
+                    fallback_records = []
+                    for idx in range(10):
+                        heading_rad = np.radians(m_cfg.nominal_heading_deg)
+                        dist_m = idx * m_cfg.speed_mps * 2.0
+                        d_lat = (dist_m * np.cos(heading_rad)) / 111000.0
+                        d_lng = (dist_m * np.sin(heading_rad)) / (111000.0 * np.cos(np.radians(m_cfg.origin_lat)))
+                        rec = SonarParser.load_from_file(
+                            image_path=s_path,
+                            survey_id=m_cfg.mission_id,
+                            ping_index=idx,
+                            altitude_m=m_cfg.nominal_altitude_m,
+                            slant_range_m=50.0,
+                            heading_deg=m_cfg.nominal_heading_deg,
+                            latitude=m_cfg.origin_lat + d_lat,
+                            longitude=m_cfg.origin_lng + d_lng
+                        )
+                        fallback_records.append(rec)
+                    self.cached_frames[key] = fallback_records
+                    logger.info(f"Initialized {key} with verified local sonar frames.")
+
     def get_available_missions(self) -> List[Dict[str, Any]]:
         all_missions = []
         for key, cfg in {**PRECONFIGURED_MISSIONS, **self.custom_missions}.items():

@@ -76,3 +76,4 @@ data/extracted/
 *.tmp
 *.bak
 *.swp
+scratch/

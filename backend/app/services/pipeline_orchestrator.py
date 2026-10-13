@@ -11,6 +11,7 @@ from ml.preprocessing.filters import SonarFilterEngine
 from ml.preprocessing.slant_range import SlantRangeCorrector
 from ml.discovery.classical_proposal import ClassicalProposalEngine, CandidateProposal
 from ml.discovery.patchcore_anomaly import PatchCoreAnomalyDetector
+from ml.discovery.detector import KnownObjectDetector
 from ml.discovery.proposal_fusion import ProposalFusionEngine
 from ml.acoustic.physics_engine import AcousticPhysicsEngine, AcousticPhysicsEvidence
 from ml.acoustic.filament_analyzer import GhostNetFilamentAnalyzer, FilamentEvidence
@@ -31,6 +32,7 @@ class PipelineOrchestrator:
         self.qc_engine = QualityControlEngine()
         self.classical_engine = ClassicalProposalEngine(k_sigma=1.6, min_area_px=15)
         self.patchcore_engine = PatchCoreAnomalyDetector(patch_size=16, stride=8, anomaly_threshold=0.55)
+        self.detector = KnownObjectDetector(weights_path=os.path.join(models_dir, "yolov8_best.pt"))
         self.physics_engine = AcousticPhysicsEngine(pixel_res_m=0.05)
         self.filament_analyzer = GhostNetFilamentAnalyzer()
         self.tracker = MultiPingKalmanTracker(max_dist_gating_px=60.0, confirm_hits_threshold=2)
@@ -117,13 +119,21 @@ class PipelineOrchestrator:
         ping_index: int = 0
     ) -> Tuple[QCReport, List[Dict[str, Any]]]:
         raw_img = frame_record.image_array
+        if raw_img.ndim == 3:
+            if raw_img.shape[2] == 3:
+                raw_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2GRAY)
+            elif raw_img.shape[2] == 1:
+                raw_img = raw_img.squeeze(axis=2)
+            else:
+                raw_img = raw_img[:, :, 0]
+
         # Normalize ultra-high-resolution imagery to standard SSS processing grid
         if raw_img.shape[1] > 1024 or raw_img.shape[0] > 768:
             scale_w = 768 / raw_img.shape[1]
             scale_h = 384 / raw_img.shape[0]
             raw_img = cv2.resize(raw_img, (768, 384), interpolation=cv2.INTER_AREA)
 
-        H, W = raw_img.shape
+        H, W = raw_img.shape[:2]
         nadir_col = W // 2
 
         # Stage 1: Quality Control
@@ -136,12 +146,26 @@ class PipelineOrchestrator:
 
         # Stage 3: Multi-Source Discovery
         classical_props = self.classical_engine.detect_proposals(preprocessed, frame_id=frame_record.frame_id)
+        if not classical_props:
+            classical_props = self.classical_engine.detect_proposals(raw_img, frame_id=frame_record.frame_id)
+
         patchcore_props = self.patchcore_engine.detect_proposals(preprocessed, frame_id=frame_record.frame_id)
+        if not patchcore_props:
+            patchcore_props = self.patchcore_engine.detect_proposals(raw_img, frame_id=frame_record.frame_id)
+
+        detector_props = self.detector.predict(raw_img, frame_id=frame_record.frame_id)
         
-        all_raw_props = classical_props + patchcore_props
+        all_raw_props = classical_props + patchcore_props + detector_props
         fused_props = ProposalFusionEngine.fuse_proposals(all_raw_props, iou_threshold=0.30)
-        # Keep top-4 highest confidence candidates to keep UI clean and responsive
-        fused_props = sorted(fused_props, key=lambda p: p.confidence, reverse=True)[:4]
+        # Prioritize supervised detections from YOLOv8, followed by confidence
+        fused_props = sorted(
+            fused_props,
+            key=lambda p: (
+                1 if (p.detector_class != "unknown" and p.detector_conf > 0.25) else 0,
+                p.confidence
+            ),
+            reverse=True
+        )[:6]
 
         # Stage 4: Multi-Ping Kalman Tracking
         active_tracks = self.tracker.update(fused_props, ping_index=ping_index)
@@ -189,15 +213,28 @@ class PipelineOrchestrator:
 
             # Accurate, contextual target subtype hint
             p_anth = getattr(fusion_decision, "p_anthropogenic", 0.85)
-            if fusion_decision.triage_state == "HIGH_CONFIDENCE" or p_anth > 0.65:
-                if filament_ev.is_net_like or filament_ev.filament_density > 0.35:
-                    target_hint = "GHOST_NET"
-                elif "pipeline" in str(prop.detector_class).lower():
-                    target_hint = "PIPELINE"
-                elif "wreck" in str(prop.detector_class).lower() or physics_ev.estimated_target_height_m > 1.2:
+            det_cls_lower = str(prop.detector_class).lower()
+
+            if prop.detector_class != "unknown" and prop.detector_conf > 0.25:
+                if "wreck" in det_cls_lower or "ship" in det_cls_lower:
                     target_hint = "SHIPWRECK"
+                elif "pipe" in det_cls_lower:
+                    target_hint = "PIPELINE"
+                elif "mine" in det_cls_lower or "cylinder" in det_cls_lower:
+                    target_hint = "NAVAL_MINE"
+                elif "net" in det_cls_lower or "fishing" in det_cls_lower:
+                    target_hint = "GHOST_NET"
+                elif "natural" in det_cls_lower:
+                    target_hint = "NATURAL_OBJECT"
                 else:
                     target_hint = "MARINE_DEBRIS"
+            elif fusion_decision.triage_state == "HIGH_CONFIDENCE" or p_anth > 0.60:
+                if filament_ev.is_net_like or filament_ev.filament_density > 0.35:
+                    target_hint = "GHOST_NET"
+                elif physics_ev.estimated_target_height_m > 1.2:
+                    target_hint = "SHIPWRECK"
+                else:
+                    target_hint = "ACOUSTIC_ANOMALY"
             elif fusion_decision.triage_state == "REVIEW" or p_anth > 0.30:
                 if filament_ev.is_net_like:
                     target_hint = "SUSPECTED_NET"
@@ -232,6 +269,9 @@ class PipelineOrchestrator:
                 "channel": "STARBOARD" if is_starboard else "PORT",
                 "triage_state": fusion_decision.triage_state,
                 "target_type_hint": target_hint,
+                "detection_sources": prop.sources,
+                "detector_class": prop.detector_class,
+                "detector_conf": round(float(prop.detector_conf), 3),
                 
                 "spatial_telemetry": {
                     **geo_info,
