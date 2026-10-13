@@ -193,71 +193,104 @@ export default function AnalyzePage() {
       );
     }
 
-    // Attempt real inference if file was uploaded to local FastAPI backend
-    if (uploadFile && uploadFile.type.startsWith('image/')) {
+    // Attempt real inference if file or image is available
+    let fileToSend = uploadFile;
+    if (!fileToSend && currentImage && !sample) {
+      try {
+        const blobRes = await fetch(currentImage);
+        const blob = await blobRes.blob();
+        fileToSend = new File([blob], 'sonar_scan.png', { type: blob.type || 'image/png' });
+      } catch {
+        // fallback
+      }
+    }
+
+    if (fileToSend) {
       try {
         const formData = new FormData();
-        formData.append('file', uploadFile);
+        formData.append('file', fileToSend);
         formData.append('confidence_threshold', String(threshold));
 
-        const res = await fetch('http://localhost:8000/api/v1/sonar/analyze', {
-          method: 'POST',
-          body: formData,
-        });
+        const endpoints = [
+          '/api/v1/sonar/analyze',
+          'http://localhost:8000/api/v1/sonar/analyze',
+        ];
 
-        if (res.ok) {
-          const apiData = await res.json();
+        let apiRes: Response | null = null;
+        for (const ep of endpoints) {
+          try {
+            const r = await fetch(ep, { method: 'POST', body: formData });
+            if (r.ok) {
+              apiRes = r;
+              break;
+            }
+          } catch {
+            // try next endpoint
+          }
+        }
+
+        if (apiRes && apiRes.ok) {
+          const apiData = await apiRes.json();
           if (apiData.contacts && apiData.contacts.length > 0) {
-            finalDetections = apiData.contacts.map((c: any, i: number) => ({
-              id: c.contact_id || `DET-00${i + 1}`,
-              class_name:
-                c.target_type_hint === 'GHOST_NET'
-                  ? 'Ghost Net'
-                  : c.target_type_hint === 'PIPELINE'
-                  ? 'Pipeline / Cable'
-                  : c.target_type_hint === 'CONTAINER_DRUM'
-                  ? 'Drum / Barrel'
-                  : c.target_type_hint === 'WRECK'
-                  ? 'Wreck'
-                  : 'Fishing Gear / Other',
-              confidence: c.evidence_graph?.discovery?.confidence ?? 0.85,
-              raw_confidence: Math.max(
-                0,
-                (c.evidence_graph?.discovery?.confidence ?? 0.85) - 0.07
-              ),
-              validated: c.triage_state === 'HIGH_CONFIDENCE',
-              bbox: [
-                Math.round((c.bbox[0] / 640) * 100),
-                Math.round((c.bbox[1] / 640) * 100),
-                Math.round((c.bbox[2] / 640) * 100),
-                Math.round((c.bbox[3] / 640) * 100),
-              ],
-              mask: [
-                [
-                  Math.round((c.bbox[0] / 640) * 100) + 2,
-                  Math.round((c.bbox[1] / 640) * 100) + 2,
+            const imgW = apiData.image_width || 640;
+            const imgH = apiData.image_height || 480;
+
+            finalDetections = apiData.contacts.map((c: any, i: number) => {
+              const hint = (c.target_type_hint || '').toUpperCase();
+              let className = 'Fishing Gear / Other';
+              if (hint.includes('WRECK') || hint.includes('SHIP')) {
+                className = 'Wreck';
+              } else if (hint.includes('PIPE')) {
+                className = 'Pipeline / Cable';
+              } else if (
+                hint.includes('DRUM') ||
+                hint.includes('BARREL') ||
+                hint.includes('MINE') ||
+                hint.includes('CYLINDER')
+              ) {
+                className = 'Drum / Barrel';
+              } else if (hint.includes('NET')) {
+                className = 'Ghost Net';
+              } else if (c.detector_class && c.detector_class !== 'unknown') {
+                const det = c.detector_class.toLowerCase();
+                if (det.includes('wreck') || det.includes('ship')) className = 'Wreck';
+                else if (det.includes('pipe')) className = 'Pipeline / Cable';
+                else if (det.includes('mine') || det.includes('cylinder')) className = 'Drum / Barrel';
+                else if (det.includes('net') || det.includes('fishing')) className = 'Ghost Net';
+              }
+
+              const bx = Math.round((c.bbox[0] / imgW) * 100);
+              const by = Math.round((c.bbox[1] / imgH) * 100);
+              const bw = Math.min(100 - bx, Math.max(4, Math.round((c.bbox[2] / imgW) * 100)));
+              const bh = Math.min(100 - by, Math.max(4, Math.round((c.bbox[3] / imgH) * 100)));
+
+              const conf =
+                c.fusion_decision?.calibrated_probabilities?.p_anthropogenic ??
+                c.evidence_graph?.discovery?.confidence ??
+                0.85;
+
+              return {
+                id: c.contact_id || `DET-00${i + 1}`,
+                class_name: className,
+                confidence: Number(conf.toFixed(2)),
+                raw_confidence: Math.max(0, Number((conf - 0.07).toFixed(2))),
+                validated: c.triage_state === 'HIGH_CONFIDENCE',
+                bbox: [bx, by, bw, bh],
+                mask: [
+                  [bx + 1, by + 1],
+                  [bx + bw - 1, by + 1],
+                  [bx + bw - 1, by + bh - 1],
+                  [bx + 1, by + bh - 1],
                 ],
-                [
-                  Math.round(((c.bbox[0] + c.bbox[2]) / 640) * 100) - 2,
-                  Math.round((c.bbox[1] / 640) * 100) + 2,
-                ],
-                [
-                  Math.round(((c.bbox[0] + c.bbox[2]) / 640) * 100) - 2,
-                  Math.round(((c.bbox[1] + c.bbox[3]) / 640) * 100) - 2,
-                ],
-                [
-                  Math.round((c.bbox[0] / 640) * 100) + 2,
-                  Math.round(((c.bbox[1] + c.bbox[3]) / 640) * 100) - 2,
-                ],
-              ],
-              location: navFile
-                ? { latitude: 36.8421, longitude: -5.4317 }
-                : null,
-            }));
+                location: navFile
+                  ? { latitude: 36.8421, longitude: -5.4317 }
+                  : null,
+              };
+            });
           }
         }
       } catch {
-        // Use realistic precomputed model detections if backend is unavailable
+        // Fallback to in-browser CV if network error
       }
     }
 

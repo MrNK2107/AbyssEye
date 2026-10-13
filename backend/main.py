@@ -29,6 +29,29 @@ def health_check():
         "pipeline_state": "READY"
     }
 
+# Mount Gradio demo interface
+try:
+    import gradio as gr
+    from backend.app.services.gradio_app import create_gradio_interface
+    gradio_demo = create_gradio_interface()
+    app = gr.mount_gradio_app(app, gradio_demo, path="/gradio")
+except Exception as e:
+    print(f"Gradio mounting note: {e}")
+
+# Mount static frontend build if present
+import os
+from fastapi.staticfiles import StaticFiles
+
+frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "out"))
+if not os.path.exists(frontend_dir):
+    frontend_dir = os.path.abspath("frontend/out")
+if not os.path.exists(frontend_dir) and os.path.exists("index.html"):
+    frontend_dir = os.path.abspath(".")
+
+if os.path.exists(frontend_dir):
+    app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=port, reload=False)

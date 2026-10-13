@@ -32,7 +32,7 @@ class PipelineOrchestrator:
         self.qc_engine = QualityControlEngine()
         self.classical_engine = ClassicalProposalEngine(k_sigma=1.6, min_area_px=15)
         self.patchcore_engine = PatchCoreAnomalyDetector(patch_size=16, stride=8, anomaly_threshold=0.55)
-        self.detector = KnownObjectDetector(weights_path=os.path.join(models_dir, "yolov8_best.pt"))
+        self.detector = KnownObjectDetector(confidence_threshold=0.01, weights_path=os.path.join(models_dir, "yolov8_best.pt"))
         self.physics_engine = AcousticPhysicsEngine(pixel_res_m=0.05)
         self.filament_analyzer = GhostNetFilamentAnalyzer()
         self.tracker = MultiPingKalmanTracker(max_dist_gating_px=60.0, confirm_hits_threshold=2)
@@ -118,6 +118,10 @@ class PipelineOrchestrator:
         frame_record: SonarFrameRecord,
         ping_index: int = 0
     ) -> Tuple[QCReport, List[Dict[str, Any]]]:
+        raw_color_img = None
+        if frame_record.image_array.ndim == 3 and frame_record.image_array.shape[2] == 3:
+            raw_color_img = frame_record.image_array.copy()
+
         raw_img = frame_record.image_array
         if raw_img.ndim == 3:
             if raw_img.shape[2] == 3:
@@ -153,7 +157,8 @@ class PipelineOrchestrator:
         if not patchcore_props:
             patchcore_props = self.patchcore_engine.detect_proposals(raw_img, frame_id=frame_record.frame_id)
 
-        detector_props = self.detector.predict(raw_img, frame_id=frame_record.frame_id)
+        det_input = raw_color_img if raw_color_img is not None else raw_img
+        detector_props = self.detector.predict(det_input, frame_id=frame_record.frame_id)
         
         all_raw_props = classical_props + patchcore_props + detector_props
         fused_props = ProposalFusionEngine.fuse_proposals(all_raw_props, iou_threshold=0.30)
@@ -161,7 +166,7 @@ class PipelineOrchestrator:
         fused_props = sorted(
             fused_props,
             key=lambda p: (
-                1 if (p.detector_class != "unknown" and p.detector_conf > 0.25) else 0,
+                1 if (p.detector_class != "unknown" and p.detector_conf > 0.01) else 0,
                 p.confidence
             ),
             reverse=True
@@ -174,13 +179,25 @@ class PipelineOrchestrator:
 
         for idx, prop in enumerate(fused_props):
             # Stage 5: Acoustic Physics Verification & Filament Netting Signature
+            # Analyze physics on raw backscatter (preserves true acoustic shadow depth)
             physics_ev = self.physics_engine.analyze_contact(
-                full_image=preprocessed,
+                full_image=raw_img,
                 bbox=prop.bbox,
                 nadir_col=nadir_col,
                 altitude_m=frame_record.altitude_m or 10.0,
                 max_slant_range_m=frame_record.slant_range_m
             )
+            if not physics_ev.shadow_present:
+                # Also try preprocessed image if raw shadow was subtle
+                physics_ev_prep = self.physics_engine.analyze_contact(
+                    full_image=preprocessed,
+                    bbox=prop.bbox,
+                    nadir_col=nadir_col,
+                    altitude_m=frame_record.altitude_m or 10.0,
+                    max_slant_range_m=frame_record.slant_range_m
+                )
+                if physics_ev_prep.shadow_present:
+                    physics_ev = physics_ev_prep
 
             # Crop target for filament analysis
             px, py, pw, ph = prop.bbox
@@ -215,7 +232,7 @@ class PipelineOrchestrator:
             p_anth = getattr(fusion_decision, "p_anthropogenic", 0.85)
             det_cls_lower = str(prop.detector_class).lower()
 
-            if prop.detector_class != "unknown" and prop.detector_conf > 0.25:
+            if prop.detector_class != "unknown" and prop.detector_conf > 0.01:
                 if "wreck" in det_cls_lower or "ship" in det_cls_lower:
                     target_hint = "SHIPWRECK"
                 elif "pipe" in det_cls_lower:
@@ -229,14 +246,14 @@ class PipelineOrchestrator:
                 else:
                     target_hint = "MARINE_DEBRIS"
             elif fusion_decision.triage_state == "HIGH_CONFIDENCE" or p_anth > 0.60:
-                if filament_ev.is_net_like or filament_ev.filament_density > 0.35:
-                    target_hint = "GHOST_NET"
-                elif physics_ev.estimated_target_height_m > 1.2:
+                if physics_ev.estimated_target_height_m > 1.0:
                     target_hint = "SHIPWRECK"
+                elif filament_ev.is_net_like and filament_ev.boundary_tortuosity > 3.0 and physics_ev.estimated_target_height_m < 0.8:
+                    target_hint = "GHOST_NET"
                 else:
                     target_hint = "ACOUSTIC_ANOMALY"
             elif fusion_decision.triage_state == "REVIEW" or p_anth > 0.30:
-                if filament_ev.is_net_like:
+                if filament_ev.is_net_like and physics_ev.estimated_target_height_m < 0.8:
                     target_hint = "SUSPECTED_NET"
                 else:
                     target_hint = "ACOUSTIC_ANOMALY"

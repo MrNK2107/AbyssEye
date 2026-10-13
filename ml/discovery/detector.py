@@ -22,7 +22,7 @@ class KnownObjectDetector:
         "natural_object": "natural_object"
     }
 
-    def __init__(self, confidence_threshold: float = 0.25, weights_path: Optional[str] = None):
+    def __init__(self, confidence_threshold: float = 0.01, weights_path: Optional[str] = None):
         self.confidence_threshold = confidence_threshold
         if weights_path is None:
             weights_path = os.path.join("models", "yolov8_best.pt")

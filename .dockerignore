@@ -1,0 +1,15 @@
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+node_modules
+frontend/node_modules
+frontend/.next
+data/training_raw
+experiments
+tests
+*.log
+temp_user_sonar.png

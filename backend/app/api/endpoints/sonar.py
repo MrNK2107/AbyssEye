@@ -273,9 +273,11 @@ async def analyze_sonar_image(
     """
     raw_bytes = await file.read()
     nparr = np.frombuffer(raw_bytes, np.uint8)
-    image = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+    image = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
     if image is None:
         raise HTTPException(status_code=400, detail="Could not decode uploaded sonar image.")
+    if image.ndim == 3 and image.shape[2] == 4:
+        image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
 
     t0 = time.time()
     temp_dir = os.path.join(settings.UPLOAD_DIR, "scans")

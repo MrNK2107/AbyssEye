@@ -73,7 +73,9 @@ class FeatureVectorAssembler:
         """
         # Discovery features
         classical_conf = proposal.confidence if "classical_cv" in proposal.sources else 0.0
-        patchcore_anomaly = proposal.anomaly_score if "patchcore_anomaly" in proposal.sources else 0.0
+        patchcore_anomaly = proposal.anomaly_score
+        if physics.highlight_present and physics.shadow_present and physics.collinearity_score > 0.6:
+            patchcore_anomaly = max(patchcore_anomaly, 0.85)
         det_conf = proposal.detector_conf
         det_class_id = float(cls.CLASS_MAP.get(proposal.detector_class, 0))
         source_cnt = float(len(proposal.sources))

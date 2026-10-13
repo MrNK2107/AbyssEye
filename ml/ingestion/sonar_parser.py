@@ -49,10 +49,12 @@ class SonarParser:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Sonar image file not found: {image_path}")
 
-        # Load image in grayscale
-        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+        # Load image preserving channels if color exists
+        img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
         if img is None:
             raise ValueError(f"Failed to decode sonar image from {image_path}")
+        if img.ndim == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
         # Default metadata
         metadata: Dict[str, Any] = {
