@@ -1,3 +1,6 @@
+# Gradio Studio
+gradio>=6.0.0
+
 # ABYSSEYE Core Dependencies
 fastapi>=0.110.0
 uvicorn[standard]>=0.28.0
