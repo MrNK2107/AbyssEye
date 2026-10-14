@@ -10,6 +10,9 @@ Unified Gradio Perception Studio with Live ML Backend:
 """
 
 import os
+os.environ["GRADIO_SSR_MODE"] = "False"
+os.environ["YOLO_CONFIG_DIR"] = "/tmp/Ultralytics"
+
 import sys
 import json
 import cv2
@@ -112,6 +115,7 @@ def run_abysseye_pipeline(
             shap_lines = [f"**Contact {c['contact_id']} ({cls_name}):**"]
             for s in top_shap:
                 impact_sign = "▲" if s["shap_impact"] > 0 else "▼"
+                impact_color = "positive" if s["shap_impact"] > 0 else "negative"
                 shap_lines.append(f"- {impact_sign} `{s['feature']}` = **{s['value']}** (SHAP impact: `{s['shap_impact']:+.3f}`)")
             shap_summaries.append("\n".join(shap_lines))
 
@@ -286,4 +290,4 @@ for fdir in candidate_dirs:
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
-    demo.launch(server_name="0.0.0.0", server_port=port)
+    demo.launch(server_name="0.0.0.0", server_port=port, ssr_mode=False)
